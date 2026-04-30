@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import { IdeaNode, ActionConfig } from '@/types';
+import { IdeaNode, ActionConfig, AIProviderConfig, AIModelConfig } from '@/types';
 import dagre from 'dagre';
 import { v4 as uuidv4 } from 'uuid';
 import { useStore } from '@/store/useStore';
@@ -7,13 +7,27 @@ import { Node, Edge } from '@xyflow/react';
 
 async function callAI(prompt: string, modelId?: string) {
   const store = useStore.getState();
-  const modelConfig = modelId ? store.models.find(m => m.id === modelId) : null;
+  
+  let providerConfig: AIProviderConfig | null = null;
+  let modelConfig: AIModelConfig | null = null;
+
+  if (modelId) {
+    for (const p of store.providers || []) {
+      const m = p.models.find(mod => mod.id === modelId);
+      if (m) {
+        providerConfig = p;
+        modelConfig = m;
+        break;
+      }
+    }
+  }
+
   const type = modelConfig?.type || 'text';
 
-  const textInstruction = '\\n\\n请务必只输出严格的 JSON 数组格式，例如 [{"content": "生成的内容1"}, {"content": "生成的内容2"}]。请根据任务要求决定输出的数组元素个数，如果任务没有明确要求拆分节点，则务必将所有内容整合到一个对象的 content 中，即数组中只有一个对象。不要输出任何额外的标记或解释文字。';
+  const textInstruction = '\n\n请务必只输出严格的 JSON 数组格式，例如 [{"content": "生成的内容1"}, {"content": "生成的内容2"}]。请根据任务要求决定输出的数组元素个数，如果任务没有明确要求拆分节点，则务必将所有内容整合到一个对象的 content 中，即数组中只有一个对象。不要输出任何额外的标记或解释文字。';
 
-  if (!modelConfig || (modelConfig.provider === 'gemini' && (!modelConfig.apiKey && process.env.GEMINI_API_KEY))) {
-    const apiKey = modelConfig?.apiKey || process.env.GEMINI_API_KEY || "";
+  if (!providerConfig || !modelConfig || (providerConfig.provider === 'gemini' && (!providerConfig.apiKey && process.env.GEMINI_API_KEY))) {
+    const apiKey = providerConfig?.apiKey || process.env.GEMINI_API_KEY || "";
     const modelName = modelConfig?.model || "gemini-2.5-flash";
     const googleAi = new GoogleGenAI({ apiKey });
     
@@ -23,7 +37,7 @@ async function callAI(prompt: string, modelId?: string) {
 
     const response = await googleAi.models.generateContent({
       model: modelName,
-      contents: prompt + textInstruction.replace(/\\\\n/g, '\\n'),
+      contents: prompt + textInstruction.replace(/\n/g, '\n'),
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -42,26 +56,26 @@ async function callAI(prompt: string, modelId?: string) {
     });
 
     let text = response.text || "[]";
-    text = text.replace(/^```json\\s*/, '').replace(/\\s*```$/, '').trim();
+    text = text.replace(/^```json\s*/, '').replace(/\s*```$/, '').trim();
     return JSON.parse(text);
   }
 
   // OpenAI or Custom (assumed OpenAI compatible format)
-  if (modelConfig.provider === 'openai' || modelConfig.provider === 'custom') {
-    let endpoint = modelConfig.endpoint || 'https://api.openai.com/v1/chat/completions';
+  if (providerConfig.provider === 'openai' || providerConfig.provider === 'custom') {
+    let endpoint = providerConfig.endpoint || 'https://api.openai.com/v1/chat/completions';
     
     let body: any = {};
     if (type === 'text') {
-      const baseUrl = endpoint.endsWith('/chat/completions') ? endpoint : \`\${endpoint.replace(/\\/$/, '')}/chat/completions\`;
+      const baseUrl = endpoint.endsWith('/chat/completions') ? endpoint : `${endpoint.replace(/\/$/, '')}/chat/completions`;
       endpoint = baseUrl;
       body = {
         model: modelConfig.model,
         messages: [
-          { role: 'user', content: prompt + textInstruction.replace(/\\\\n/g, '\\n') }
+          { role: 'user', content: prompt + textInstruction.replace(/\n/g, '\n') }
         ]
       };
     } else if (type === 'image') {
-      const baseUrl = endpoint.endsWith('/images/generations') ? endpoint : \`\${endpoint.replace(/\\/$/, '')}/images/generations\`;
+      const baseUrl = endpoint.endsWith('/images/generations') ? endpoint : `${endpoint.replace(/\/$/, '')}/images/generations`;
       endpoint = baseUrl;
       body = {
         model: modelConfig.model,
@@ -79,36 +93,36 @@ async function callAI(prompt: string, modelId?: string) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': \`Bearer \${modelConfig.apiKey}\`
+        'Authorization': `Bearer ${providerConfig.apiKey}`
       },
       body: JSON.stringify(body)
     });
 
     if (!response.ok) {
-      throw new Error(\`AI request failed: \${response.statusText} \${await response.text()}\`);
+      throw new Error(`AI request failed: ${response.statusText} ${await response.text()}`);
     }
 
     const data = await response.json();
     
     if (type === 'text') {
       let text = data.choices[0]?.message?.content || "[]";
-      text = text.replace(/^```json\\s*/, '').replace(/\\s*```$/, '').trim();
+      text = text.replace(/^```json\s*/, '').replace(/\s*```$/, '').trim();
       return JSON.parse(text);
     } else if (type === 'image') {
       const url = data.data?.[0]?.url || "";
-      return [{ content: \`![Generated Image](\${url})\`, payload: data }];
+      return [{ content: `![Generated Image](${url})`, payload: data }];
     } else {
       return [{ content: "Video/Other Generated", payload: data }];
     }
   }
 
   // Anthropic
-  if (modelConfig.provider === 'anthropic') {
+  if (providerConfig.provider === 'anthropic') {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': modelConfig.apiKey,
+        'x-api-key': providerConfig.apiKey,
         'anthropic-version': '2023-06-01',
         'anthropic-dangerously-allow-browser': 'true'
       },
@@ -116,18 +130,18 @@ async function callAI(prompt: string, modelId?: string) {
         model: modelConfig.model,
         max_tokens: 4096,
         messages: [
-          { role: 'user', content: prompt + textInstruction.replace(/\\\\n/g, '\\n') }
+          { role: 'user', content: prompt + textInstruction.replace(/\n/g, '\n') }
         ]
       })
     });
     
     if (!response.ok) {
-      throw new Error(\`AI request failed: \${response.statusText} \${await response.text()}\`);
+      throw new Error(`AI request failed: ${response.statusText} ${await response.text()}`);
     }
 
     const data = await response.json();
     let text = data.content?.[0]?.text || "[]";
-    text = text.replace(/^```json\\s*/, '').replace(/\\s*```$/, '').trim();
+    text = text.replace(/^```json\s*/, '').replace(/\s*```$/, '').trim();
     return JSON.parse(text);
   }
 
@@ -193,13 +207,13 @@ export async function processAction(action: ActionConfig, selectedNodes: IdeaNod
   };
 
   try {
-    const combinedContent = selectedNodes.map(n => n.data.content).join('\\n\\n---\\n\\n');
+    const combinedContent = selectedNodes.map(n => n.data.content).join('\n\n---\n\n');
     let results: any = null;
 
     if (action.processor.type === 'llm') {
-      let basePrompt = action.processor.payload.replace(/\\{\\{selected_content\\}\\}/g, combinedContent);
+      let basePrompt = action.processor.payload.replace(/\{\{selected_content\}\}/g, combinedContent);
       selectedNodes.forEach((node, index) => {
-        basePrompt = basePrompt.replace(new RegExp(\`\\\\{\\\\{node_\${index}\\\\}\\\\}\`, 'g'), node.data.content);
+        basePrompt = basePrompt.replace(new RegExp(`\\{\\{node_${index}\\}\\}`, 'g'), node.data.content);
       });
 
       try {
@@ -342,7 +356,7 @@ function applyLayout(action: ActionConfig, sourceNodes: IdeaNode[], results: any
     if (action.output.connectionType === 'source_to_new') {
       sourceNodes.forEach(src => {
         newEdgesMap.push({
-          id: \`e-\${src.id}-\${id}\`,
+          id: `e-${src.id}-${id}`,
           source: src.id,
           target: id,
           animated: true,
@@ -351,7 +365,7 @@ function applyLayout(action: ActionConfig, sourceNodes: IdeaNode[], results: any
     } else if (action.output.connectionType === 'new_to_source') {
       sourceNodes.forEach(src => {
         newEdgesMap.push({
-          id: \`e-\${id}-\${src.id}\`,
+          id: `e-${id}-${src.id}`,
           source: id,
           target: src.id,
           animated: true,

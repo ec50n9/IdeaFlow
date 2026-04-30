@@ -11,10 +11,22 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import Editor from '@monaco-editor/react';
 
 export function ActionConfigPanel() {
-  const { actions, addAction, updateAction, deleteAction, models } = useStore();
+  const { actions, addAction, updateAction, deleteAction, providers } = useStore();
   const [panelOpen, setPanelOpen] = useState(false);
   const [editingAction, setEditingAction] = useState<ActionConfig | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
+
+  // Helper to get model details
+  const getModelLabel = (modelId?: string) => {
+    if (!modelId) return "系统默认模型 (Gemini 1.5 Flash)";
+    for (const p of providers || []) {
+      const m = p.models.find(mod => mod.id === modelId);
+      if (m) {
+        return `${p.name} - ${m.name} (${m.model})`;
+      }
+    }
+    return "未知模型";
+  };
 
   const handleAddNew = () => {
     const newAction: ActionConfig = {
@@ -80,6 +92,9 @@ export function ActionConfigPanel() {
                       action.output.connectionType === 'source_to_new' ? '源节点 -> 新节点' :
                       action.output.connectionType === 'new_to_source' ? '新节点 -> 源节点' : '无连线'
                     }</p>
+                    {action.processor.type === 'llm' && (
+                      <p>AI模型: {getModelLabel(action.processor.modelId)}</p>
+                    )}
                   </div>
                   
                   <div className="mt-auto pt-4 relative">
@@ -185,8 +200,12 @@ export function ActionConfigPanel() {
                     })}
                   >
                     <option value="">系统默认模型 (Gemini 1.5 Flash)</option>
-                    {models.map(m => (
-                      <option key={m.id} value={m.id}>{m.name} ({m.model})</option>
+                    {providers.map(p => (
+                      <optgroup key={p.id} label={p.name}>
+                        {p.models.map(m => (
+                          <option key={m.id} value={m.id}>{m.name} ({m.model})</option>
+                        ))}
+                      </optgroup>
                     ))}
                   </select>
                 </div>
@@ -291,6 +310,31 @@ const imgResults = await ai("画一只可爱的猫咪", "your-model-id-here");
 //   { "content": "English translation here" }
 // ]`}
               </pre>
+              <div className="mt-2 text-sm text-foreground bg-muted/30 p-3 rounded-lg border">
+                <strong>当前配置的模型：</strong>
+                {providers && providers.length > 0 ? (
+                  <ul className="mt-2 space-y-2">
+                    {providers.map(p => (
+                      <li key={p.id}>
+                        <span className="font-medium text-primary">{p.name}</span>
+                        {p.models && p.models.length > 0 ? (
+                          <ul className="ml-4 mt-1 space-y-1 list-disc text-muted-foreground">
+                            {p.models.map(m => (
+                              <li key={m.id}>
+                                {m.name} ({m.type}) - <code>{m.id}</code>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <span className="text-muted-foreground text-xs ml-2">无模型配置</span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-1 text-muted-foreground">暂无自定义配置，只支持系统默认模型。</p>
+                )}
+              </div>
             </div>
             
             <div className="flex flex-col gap-2">

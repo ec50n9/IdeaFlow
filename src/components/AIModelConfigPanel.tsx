@@ -1,36 +1,42 @@
 import { useState } from 'react';
 import { useStore } from '@/store/useStore';
 import { Button } from '@/components/ui/button';
-import { Bot, Plus, Trash2, X, Cpu } from 'lucide-react';
+import { Bot, Plus, Trash2, X, Cpu, Settings } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { AIModelConfig } from '@/types';
+import { AIProviderConfig, AIModelConfig } from '@/types';
 import { v4 as uuidv4 } from 'uuid';
-import { Dialog, DialogContent } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 export function AIModelConfigPanel() {
-  const { models, addModel, updateModel, deleteModel } = useStore();
+  const { providers, addProvider, updateProvider, deleteProvider } = useStore();
   const [panelOpen, setPanelOpen] = useState(false);
-  const [editingModel, setEditingModel] = useState<AIModelConfig | null>(null);
+  const [editingProvider, setEditingProvider] = useState<AIProviderConfig | null>(null);
 
   const handleAddNew = () => {
-    const newModel: AIModelConfig = {
+    const newProvider: AIProviderConfig = {
       id: uuidv4(),
-      name: '自定义模型',
+      name: '自定义供应商',
       provider: 'custom',
-      type: 'text',
-      apiKey: '',
-      model: 'gpt-3.5-turbo',
       endpoint: 'https://api.openai.com/v1',
+      apiKey: '',
+      models: [
+        {
+          id: uuidv4(),
+          name: '对话模型',
+          type: 'text',
+          model: 'gpt-3.5-turbo'
+        }
+      ]
     };
-    addModel(newModel);
-    setEditingModel(newModel);
+    addProvider(newProvider);
+    setEditingProvider(newProvider);
   };
 
   const handleSaveEdit = () => {
-    if (editingModel) {
-      updateModel(editingModel.id, editingModel);
-      setEditingModel(null);
+    if (editingProvider) {
+      updateProvider(editingProvider.id, editingProvider);
+      setEditingProvider(null);
     }
   };
 
@@ -53,48 +59,56 @@ export function AIModelConfigPanel() {
           </div>
 
           <div className="flex-1 w-full max-w-5xl mx-auto p-4 sm:p-6 lg:p-8 flex flex-col gap-8">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between pt-2">
               <div>
-                <p className="text-muted-foreground">管理并配置您的各类 AI 模型，支持文本、图像、视频等多种能力。</p>
+                <p className="text-muted-foreground text-base">管理并配置您的各类 AI 提供商与模型。</p>
               </div>
               <Button onClick={handleAddNew} className="gap-2 shadow-sm shrink-0 whitespace-nowrap">
-                <Plus className="w-4 h-4" /> 添加模型
+                <Plus className="w-4 h-4" /> 添加供应商配置
               </Button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {models.map(mod => (
-                <div key={mod.id} className="group flex flex-col p-5 border rounded-2xl bg-card text-card-foreground shadow-sm hover:shadow-md transition-all hover:border-primary/30 relative overflow-hidden">
-                  <div className="flex items-start justify-between gap-4 mb-4">
-                    <div className="font-semibold text-lg line-clamp-1">{mod.name}</div>
-                    <div className="flex gap-1 shrink-0">
-                      <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" onClick={() => setEditingModel(mod)}>
-                        <Settings className="w-4 h-4" />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => deleteModel(mod.id)}>
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </div>
+            <div className="flex flex-col gap-8 pb-20">
+              {providers?.map(provider => (
+                <div key={provider.id} className="group flex flex-col border rounded-3xl bg-card text-card-foreground shadow-sm hover:shadow-md transition-all hover:border-primary/30 relative overflow-hidden">
+                  <div className="flex items-center justify-between bg-muted/30 px-6 py-4 border-b">
+                     <div className="flex flex-col gap-1">
+                        <div className="font-semibold text-xl">{provider.name}</div>
+                        <div className="text-xs text-muted-foreground font-mono truncate max-w-md">API接口: {provider.endpoint || '默认'}</div>
+                     </div>
+                     <div className="flex gap-2 shrink-0">
+                       <Button variant="secondary" size="sm" className="gap-1.5" onClick={() => setEditingProvider(provider)}>
+                         <Settings className="w-4 h-4" /> 配置
+                       </Button>
+                       <Button variant="outline" size="icon" className="h-9 w-9 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors" onClick={() => deleteProvider(provider.id)}>
+                         <Trash2 className="w-4 h-4" />
+                       </Button>
+                     </div>
                   </div>
-                  <div className="flex flex-col gap-2 mt-auto">
-                    <div className="text-xs text-muted-foreground bg-muted/50 px-2 py-1 rounded-md w-max">
-                      提供商: {mod.provider}
-                    </div>
-                    <div className="text-xs text-muted-foreground bg-muted/50 px-2 py-1 rounded-md w-max">
-                      类型: {mod.type === 'text' ? '文本对话' : mod.type === 'image' ? '图像生成' : '视频生成'}
-                    </div>
-                    <div className="text-xs text-muted-foreground truncate" title={mod.model}>
-                      模型: {mod.model}
-                    </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-6">
+                    {provider.models.map(mod => (
+                      <div key={mod.id} className="flex flex-col p-4 border rounded-2xl bg-background shadow-sm">
+                         <div className="font-medium text-base mb-1">{mod.name}</div>
+                         <div className="text-xs text-muted-foreground bg-muted/50 px-2 py-1 rounded w-max mb-3">
+                           能力: {mod.type === 'text' ? '文本对话' : mod.type === 'image' ? '图像生成' : '视频生成'}
+                         </div>
+                         <div className="text-xs font-mono text-muted-foreground truncate" title={mod.model}>
+                           标识 ID: {mod.model}
+                         </div>
+                      </div>
+                    ))}
+                    {(!provider.models || provider.models.length === 0) && (
+                       <div className="col-span-full text-sm text-muted-foreground">暂未配置任何下属模型。</div>
+                    )}
                   </div>
                 </div>
               ))}
               
-              {models.length === 0 && (
-                <div className="col-span-full py-16 text-center border-2 border-dashed rounded-xl bg-muted/20 text-muted-foreground flex flex-col items-center justify-center gap-3">
-                  <Bot className="w-10 h-10 opacity-20" />
-                  <p>您还没有配置任何模型。</p>
-                  <Button variant="outline" onClick={handleAddNew}>立即添加</Button>
+              {(!providers || providers.length === 0) && (
+                <div className="py-20 text-center border-2 border-dashed rounded-3xl bg-muted/20 text-muted-foreground flex flex-col items-center justify-center gap-3">
+                  <Bot className="w-12 h-12 opacity-20 mb-2" />
+                  <p className="text-lg">您还没有配置任何供应商。</p>
+                  <Button variant="outline" onClick={handleAddNew} className="mt-2">立即添加配置</Button>
                 </div>
               )}
             </div>
@@ -102,68 +116,128 @@ export function AIModelConfigPanel() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!editingModel} onOpenChange={(open) => !open && setEditingModel(null)}>
-        <DialogContent className="sm:max-w-[600px] gap-6 flex flex-col max-h-[85vh]">
-          <div className="flex items-center justify-between border-b pb-4">
-            <h2 className="text-xl font-semibold">编辑模型</h2>
-            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full" onClick={() => setEditingModel(null)}>
-              <X className="w-5 h-5" />
-            </Button>
-          </div>
+      <Dialog open={!!editingProvider} onOpenChange={(open) => !open && setEditingProvider(null)}>
+        <DialogContent className="sm:max-w-[700px] gap-6 flex flex-col max-h-[85vh] overflow-hidden p-0">
+          <DialogHeader className="px-6 py-4 border-b m-0 flex-none shrink-0 border-b relative">
+            <DialogTitle>{editingProvider?.id && !providers?.find(p => p.id === editingProvider.id) ? '新建供应商配置' : '编辑供应商配置'}</DialogTitle>
+          </DialogHeader>
           
-          {editingModel && (
-            <div className="flex flex-col gap-5 overflow-y-auto py-2 pr-2">
-              <div className="grid gap-3">
-                <Label>配置名称</Label>
-                <Input value={editingModel.name} onChange={e => setEditingModel({...editingModel, name: e.target.value})} placeholder="例如：我的GPT-4" />
-              </div>
+          {editingProvider && (
+            <div className="flex flex-col gap-8 overflow-y-auto px-6 py-2">
+              <div className="flex flex-col gap-6">
+                 <div>
+                   <h3 className="text-lg font-medium mb-4">供应商基础信息</h3>
+                   <div className="grid gap-4">
+                     <div className="grid gap-2">
+                       <Label>供应商名称</Label>
+                       <Input value={editingProvider.name} onChange={e => setEditingProvider({...editingProvider, name: e.target.value})} placeholder="例如：DeepSeek、OpenAI、极兔AI 等" />
+                     </div>
+       
+                     <div className="grid grid-cols-2 gap-4">
+                       <div className="grid gap-2">
+                         <Label>预设配置 (Provider)</Label>
+                         <select 
+                           className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                           value={editingProvider.provider}
+                           onChange={e => setEditingProvider({...editingProvider, provider: e.target.value as any})}
+                         >
+                           <option value="custom">自定义 / 其他</option>
+                           <option value="openai">OpenAI</option>
+                           <option value="anthropic">Anthropic</option>
+                           <option value="gemini">Google Gemini</option>
+                         </select>
+                       </div>
+                       <div className="grid gap-2">
+                         <Label>接口地址 (Endpoint URL)</Label>
+                         <Input value={editingProvider.endpoint || ''} onChange={e => setEditingProvider({...editingProvider, endpoint: e.target.value})} placeholder="例如 https://api.openai.com/v1" />
+                       </div>
+                     </div>
+       
+                     <div className="grid gap-2">
+                       <Label>API Key</Label>
+                       <Input type="password" value={editingProvider.apiKey} onChange={e => setEditingProvider({...editingProvider, apiKey: e.target.value})} placeholder="sk-..." />
+                     </div>
+                   </div>
+                 </div>
 
-              <div className="grid gap-3">
-                <Label>提供商 (Provider)</Label>
-                <select 
-                  className="flex h-9 w-full items-center justify-between rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-                  value={editingModel.provider}
-                  onChange={e => setEditingModel({...editingModel, provider: e.target.value as any})}
-                >
-                  <option value="custom">自定义 / 其他</option>
-                  <option value="openai">OpenAI</option>
-                  <option value="anthropic">Anthropic</option>
-                  <option value="gemini">Google Gemini</option>
-                </select>
-              </div>
+                 <div className="w-full h-px bg-border"></div>
 
-              <div className="grid gap-3">
-                <Label>模型能力类型</Label>
-                <select 
-                  className="flex h-9 w-full items-center justify-between rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-                  value={editingModel.type}
-                  onChange={e => setEditingModel({...editingModel, type: e.target.value as any})}
-                >
-                  <option value="text">文本对话 (Text / Chat)</option>
-                  <option value="image">图像生成 (Image)</option>
-                  <option value="video">视频生成 (Video)</option>
-                </select>
-              </div>
+                 <div>
+                   <div className="flex items-center justify-between mb-4">
+                     <h3 className="text-lg font-medium">包含的模型列表 ({editingProvider.models.length})</h3>
+                     <Button variant="outline" size="sm" className="gap-1.5" onClick={() => {
+                        setEditingProvider({
+                           ...editingProvider,
+                           models: [
+                              ...editingProvider.models,
+                              { id: uuidv4(), name: '新模型', type: 'text', model: '' }
+                           ]
+                        });
+                     }}>
+                       <Plus className="w-4 h-4" /> 添加模型
+                     </Button>
+                   </div>
+                   
+                   <div className="flex flex-col gap-4">
+                     {editingProvider.models.map((mod, index) => (
+                       <div key={mod.id} className="flex flex-col sm:flex-row gap-4 items-start sm:items-center p-4 border rounded-xl bg-muted/10 relative">
+                         <div className="grid gap-2 flex-1 w-full">
+                           <Label className="text-xs text-muted-foreground">功能名称</Label>
+                           <Input value={mod.name} onChange={e => {
+                              const newModels = [...editingProvider.models];
+                              newModels[index].name = e.target.value;
+                              setEditingProvider({...editingProvider, models: newModels});
+                           }} placeholder="如：DeepSeek Chat" />
+                         </div>
+                         
+                         <div className="grid gap-2 w-full sm:w-32 shrink-0">
+                           <Label className="text-xs text-muted-foreground">能力类型</Label>
+                           <select 
+                             className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm disabled:opacity-50"
+                             value={mod.type}
+                             onChange={e => {
+                                const newModels = [...editingProvider.models];
+                                newModels[index].type = e.target.value as any;
+                                setEditingProvider({...editingProvider, models: newModels});
+                             }}
+                           >
+                             <option value="text">文生文</option>
+                             <option value="image">生图</option>
+                             <option value="video">生视频</option>
+                           </select>
+                         </div>
 
-              <div className="grid gap-3">
-                <Label>模型标识符 (Model ID)</Label>
-                <Input value={editingModel.model} onChange={e => setEditingModel({...editingModel, model: e.target.value})} placeholder="例如：gpt-4o, claude-3-opus, gemini-1.5-pro" />
-              </div>
+                         <div className="grid gap-2 flex-1 w-full">
+                           <Label className="text-xs text-muted-foreground">标识 ID (Model ID)</Label>
+                           <Input value={mod.model} onChange={e => {
+                              const newModels = [...editingProvider.models];
+                              newModels[index].model = e.target.value;
+                              setEditingProvider({...editingProvider, models: newModels});
+                           }} placeholder="如: deepseek-chat" />
+                         </div>
 
-              <div className="grid gap-3">
-                <Label>接口地址 (Endpoint URL)</Label>
-                <Input value={editingModel.endpoint || ''} onChange={e => setEditingModel({...editingModel, endpoint: e.target.value})} placeholder="对于自定义服务必填，例如 https://api.openai.com/v1" />
-              </div>
-
-              <div className="grid gap-3">
-                <Label>API Key</Label>
-                <Input type="password" value={editingModel.apiKey} onChange={e => setEditingModel({...editingModel, apiKey: e.target.value})} placeholder="sk-..." />
+                         <Button variant="ghost" size="icon" className="absolute sm:relative right-1 top-1 sm:right-auto sm:top-auto self-start sm:self-end mt-0 sm:mt-6 text-muted-foreground hover:text-destructive shrink-0" onClick={() => {
+                            const newModels = [...editingProvider.models];
+                            newModels.splice(index, 1);
+                            setEditingProvider({...editingProvider, models: newModels});
+                         }}>
+                           <Trash2 className="w-4 h-4" />
+                         </Button>
+                       </div>
+                     ))}
+                     {editingProvider.models.length === 0 && (
+                        <div className="text-sm text-muted-foreground py-4 text-center border-2 border-dashed rounded-xl">
+                           暂无模型。请点击右上角按钮添加。
+                        </div>
+                     )}
+                   </div>
+                 </div>
               </div>
             </div>
           )}
 
-          <div className="flex justify-end pt-4 border-t">
-            <Button onClick={handleSaveEdit} className="px-8">保存</Button>
+          <div className="flex-none p-4 border-t bg-background flex justify-end shrink-0">
+            <Button onClick={handleSaveEdit} className="px-8 w-full sm:w-auto">保存配置</Button>
           </div>
         </DialogContent>
       </Dialog>

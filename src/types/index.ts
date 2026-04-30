@@ -12,11 +12,17 @@ export type IdeaNode = Node<IdeaNodeData>;
 export interface AIModelConfig {
   id: string;
   name: string;
-  provider: 'openai' | 'anthropic' | 'gemini' | 'custom';
   type: 'text' | 'image' | 'video'; // Capability 
+  model: string; // The model identifier string e.g. "gpt-4o"
+}
+
+export interface AIProviderConfig {
+  id: string;
+  name: string;
+  provider: 'openai' | 'anthropic' | 'gemini' | 'custom';
   endpoint?: string; // Optional for known providers, required for custom
   apiKey: string;
-  model: string; // The model identifier string e.g. "gpt-4o"
+  models: AIModelConfig[];
 }
 
 export interface ActionConfig {

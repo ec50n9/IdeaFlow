@@ -13,14 +13,14 @@ import {
   applyNodeChanges,
   applyEdgeChanges,
 } from '@xyflow/react';
-import { IdeaNode, ActionConfig, AIModelConfig } from '@/types';
+import { IdeaNode, ActionConfig, AIModelConfig, AIProviderConfig } from '@/types';
 import { v4 as uuidv4 } from 'uuid';
 
 interface AppState {
   nodes: IdeaNode[];
   edges: Edge[];
   actions: ActionConfig[];
-  models: AIModelConfig[];
+  providers: AIProviderConfig[];
   
   onNodesChange: OnNodesChange<IdeaNode>;
   onEdgesChange: OnEdgesChange;
@@ -35,9 +35,9 @@ interface AppState {
   updateAction: (id: string, action: Partial<ActionConfig>) => void;
   deleteAction: (id: string) => void;
 
-  addModel: (model: AIModelConfig) => void;
-  updateModel: (id: string, model: Partial<AIModelConfig>) => void;
-  deleteModel: (id: string) => void;
+  addProvider: (provider: AIProviderConfig) => void;
+  updateProvider: (id: string, provider: Partial<AIProviderConfig>) => void;
+  deleteProvider: (id: string) => void;
 }
 
 const defaultActions: ActionConfig[] = [
@@ -86,7 +86,7 @@ export const useStore = create<AppState>()(
       ],
       edges: [],
       actions: defaultActions,
-      models: [],
+      providers: [],
 
       onNodesChange: (changes: NodeChange<IdeaNode>[]) => {
         set({
@@ -149,29 +149,29 @@ export const useStore = create<AppState>()(
         });
       },
 
-      addModel: (model: AIModelConfig) => {
+      addProvider: (provider: AIProviderConfig) => {
         set({
-          models: [...get().models, model],
+          providers: [...get().providers, provider],
         });
       },
 
-      updateModel: (id: string, modelData: Partial<AIModelConfig>) => {
+      updateProvider: (id: string, providerData: Partial<AIProviderConfig>) => {
         set({
-          models: get().models.map((mod) => 
-            mod.id === id ? { ...mod, ...modelData } : mod
+          providers: get().providers.map((prov) => 
+            prov.id === id ? { ...prov, ...providerData } : prov
           )
         });
       },
 
-      deleteModel: (id: string) => {
+      deleteProvider: (id: string) => {
         set({
-          models: get().models.filter((mod) => mod.id !== id),
+          providers: get().providers.filter((prov) => prov.id !== id),
         });
       }
     }),
     {
       name: 'mindflow-storage',
-      partialize: (state) => ({ actions: state.actions, nodes: state.nodes, edges: state.edges, models: state.models }),
+      partialize: (state) => ({ actions: state.actions, nodes: state.nodes, edges: state.edges, providers: state.providers }),
     }
   )
 );
