@@ -5,6 +5,13 @@ import { Bot, Plus, Trash2, X, Cpu, Settings } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { AIProviderConfig, AIModelConfig, ModelProtocol } from '@/types';
 import { v4 as uuidv4 } from 'uuid';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -220,21 +227,28 @@ export function AIModelConfigPanel() {
                              }} placeholder="如: gpt-4o, deepseek-chat" />
                            </div>
                            
-                           <div className="grid gap-2 w-full sm:w-36 shrink-0">
+                           <div className="grid gap-2 w-full sm:w-44 shrink-0">
                              <Label className="text-xs text-muted-foreground">协议</Label>
-                             <select 
-                               className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm disabled:opacity-50"
+                             <Select
                                value={mod.protocol}
-                               onChange={e => {
+                               onValueChange={value => {
                                   const newModels = [...editingProvider.models];
-                                  newModels[index].protocol = e.target.value as ModelProtocol;
+                                  newModels[index].protocol = value as ModelProtocol;
+                                  if (value === 'openai-responses' && (newModels[index].supportsTextToImage || newModels[index].supportsImageToImage) && !newModels[index].imageModel) {
+                                    newModels[index].imageModel = 'gpt-image-2';
+                                  }
                                   setEditingProvider({...editingProvider, models: newModels});
                                }}
                              >
-                               {(Object.entries(PROTOCOL_LABELS) as [ModelProtocol, string][]).map(([key, label]) => (
-                                 <option key={key} value={key}>{label}</option>
-                               ))}
-                             </select>
+                               <SelectTrigger className="w-full">
+                                 <SelectValue />
+                               </SelectTrigger>
+                               <SelectContent>
+                                 {(Object.entries(PROTOCOL_LABELS) as [ModelProtocol, string][]).map(([key, label]) => (
+                                   <SelectItem key={key} value={key}>{label}</SelectItem>
+                                 ))}
+                               </SelectContent>
+                             </Select>
                            </div>
 
                            <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-destructive shrink-0 self-end mb-0.5" onClick={() => {
@@ -264,6 +278,9 @@ export function AIModelConfigPanel() {
                                onCheckedChange={(checked) => {
                                  const newModels = [...editingProvider.models];
                                  newModels[index].supportsTextToImage = checked === true;
+                                 if (checked === true && mod.protocol === 'openai-responses' && !newModels[index].imageModel) {
+                                   newModels[index].imageModel = 'gpt-image-2';
+                                 }
                                  setEditingProvider({...editingProvider, models: newModels});
                                }}
                              />
@@ -275,12 +292,36 @@ export function AIModelConfigPanel() {
                                onCheckedChange={(checked) => {
                                  const newModels = [...editingProvider.models];
                                  newModels[index].supportsImageToImage = checked === true;
+                                 if (checked === true && mod.protocol === 'openai-responses' && !newModels[index].imageModel) {
+                                   newModels[index].imageModel = 'gpt-image-2';
+                                 }
                                  setEditingProvider({...editingProvider, models: newModels});
                                }}
                              />
                              <span>图生图</span>
                            </label>
                          </div>
+
+                         {mod.protocol === 'openai-responses' && (mod.supportsTextToImage || mod.supportsImageToImage) && (
+                           <div className="grid gap-2">
+                             <Label className="text-xs text-muted-foreground">Responses 图像模型</Label>
+                             <Select
+                               value={mod.imageModel || 'gpt-image-2'}
+                               onValueChange={value => {
+                                 const newModels = [...editingProvider.models];
+                                 newModels[index].imageModel = value;
+                                 setEditingProvider({...editingProvider, models: newModels});
+                               }}
+                             >
+                               <SelectTrigger className="w-full">
+                                 <SelectValue placeholder="请选择图像模型" />
+                               </SelectTrigger>
+                               <SelectContent>
+                                 <SelectItem value="gpt-image-2">gpt-image-2</SelectItem>
+                               </SelectContent>
+                             </Select>
+                           </div>
+                         )}
                        </div>
                      ))}
                      {editingProvider.models.length === 0 && (

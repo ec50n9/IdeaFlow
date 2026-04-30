@@ -6,6 +6,8 @@ export interface AdapterParams {
   apiKey: string;
   endpoint?: string;
   signal?: AbortSignal;
+  /** 仅 openai-responses 协议下用于图像生成/编辑的模型 */
+  imageModel?: string;
 }
 
 export interface AdapterResult {

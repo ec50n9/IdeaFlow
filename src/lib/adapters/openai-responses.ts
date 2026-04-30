@@ -135,7 +135,7 @@ export class OpenAIResponsesAdapter implements ModelAdapter {
     const body = {
       model: params.model,
       input: [{ role: 'user', content: params.prompt }],
-      tools: [{ type: 'image_generation', model: 'gpt-image-2' }],
+      tools: [{ type: 'image_generation', model: params.imageModel }],
     };
 
     const response = await fetch(endpoint, {
@@ -170,7 +170,7 @@ export class OpenAIResponsesAdapter implements ModelAdapter {
     const body = {
       model: params.model,
       input: [{ role: 'user', content }],
-      tools: [{ type: 'image_generation', model: 'gpt-image-2', action: 'edit' }],
+      tools: [{ type: 'image_generation', model: params.imageModel, action: 'edit' }],
     };
 
     const response = await fetch(endpoint, {

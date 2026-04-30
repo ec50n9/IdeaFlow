@@ -174,12 +174,19 @@ export async function callAI(
 
   validateCapability(modelConfig, mode);
 
+  if (modelConfig.protocol === 'openai-responses' && (mode === 'generateImage' || mode === 'editImage')) {
+    if (!modelConfig.imageModel) {
+      throw new Error(`模型 "${modelConfig.model}" 使用 Responses API 协议进行图片生成/编辑时，必须配置图像模型（如 gpt-image-2）。请在模型配置中心补全该模型的「图像模型」字段。`);
+    }
+  }
+
   const params = {
     model: modelConfig.model,
     prompt,
     apiKey: providerConfig.apiKey,
     endpoint: providerConfig.endpoint,
     signal: options?.signal,
+    imageModel: modelConfig.imageModel,
   };
 
   let result: { content: Array<{ content: string }>; payload?: any };

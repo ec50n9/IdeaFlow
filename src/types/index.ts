@@ -35,6 +35,8 @@ export interface AIModelConfig {
   supportsText: boolean;
   supportsTextToImage: boolean;
   supportsImageToImage: boolean;
+  /** 仅 openai-responses 协议下用于图像生成/编辑的模型（如 gpt-image-2） */
+  imageModel?: string;
 }
 
 export interface AIProviderConfig {
