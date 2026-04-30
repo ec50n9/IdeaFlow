@@ -11,6 +11,10 @@ const taskRegistry = new Map<string, {
   nodeIds: string[];
 }>();
 
+// Tracks source-handle allocations that have been decided but not yet written to the store.
+// Used to prevent concurrent actions from picking the same free direction.
+const pendingAllocations = new Map<string, Map<string, string>>(); // taskId -> nodeId -> sourceHandle
+
 export function cancelTask(taskId: string) {
   const task = taskRegistry.get(taskId);
   if (task) {
@@ -348,7 +352,7 @@ export async function processAction(action: ActionConfig, selectedNodes: IdeaNod
 
       if (Array.isArray(results)) {
         if (results.length > 0) {
-          applyLayout(action, selectedNodes, results, sourceMeta);
+          applyLayout(action, selectedNodes, results, sourceMeta, taskId);
         }
       } else if (typeof results === 'object') {
         if (results.nodes || results.edges) {
@@ -356,14 +360,14 @@ export async function processAction(action: ActionConfig, selectedNodes: IdeaNod
           applyCustomGraphConfig(selectedNodes, results, sourceMeta);
         } else if (results.content) {
           // Single object acting as a node payload
-          applyLayout(action, selectedNodes, [results], sourceMeta);
+          applyLayout(action, selectedNodes, [results], sourceMeta, taskId);
         } else {
           // Fallback, treat it as empty or missing expected fields
-          applyLayout(action, selectedNodes, [results], sourceMeta);
+          applyLayout(action, selectedNodes, [results], sourceMeta, taskId);
         }
       } else if (typeof results === 'string') {
         // Raw string
-        applyLayout(action, selectedNodes, [{ content: results }], sourceMeta);
+        applyLayout(action, selectedNodes, [{ content: results }], sourceMeta, taskId);
       }
     }
   } catch (error) {
@@ -374,6 +378,7 @@ export async function processAction(action: ActionConfig, selectedNodes: IdeaNod
     console.error("Error processing action:", error);
   } finally {
     clearTask(taskId);
+    pendingAllocations.delete(taskId);
   }
 }
 
@@ -429,8 +434,39 @@ function applyCustomGraphConfig(sourceNodes: IdeaNode[], config: any, sourceMeta
   ]);
 }
 
+const DIRECTION_PRIORITY = [
+  { sourceHandle: 'bottom-source', targetHandle: 'top-target' },
+  { sourceHandle: 'top-source', targetHandle: 'bottom-target' },
+  { sourceHandle: 'left-source', targetHandle: 'right-target' },
+  { sourceHandle: 'right-source', targetHandle: 'left-target' },
+];
+
+function getFreeHandlePair(nodeId: string, existingEdges: Edge[], newEdges: Edge[], excludeTaskId?: string): { sourceHandle: string; targetHandle: string } {
+  const allOutgoing = [
+    ...existingEdges.filter(e => e.source === nodeId),
+    ...newEdges.filter(e => e.source === nodeId),
+  ];
+  const used = new Set(allOutgoing.map(e => e.sourceHandle || 'bottom-source'));
+
+  // Also consider directions allocated by other concurrently-running tasks
+  for (const [otherTaskId, allocations] of pendingAllocations) {
+    if (excludeTaskId && otherTaskId === excludeTaskId) continue;
+    if (allocations.has(nodeId)) {
+      used.add(allocations.get(nodeId)!);
+    }
+  }
+
+  for (const dir of DIRECTION_PRIORITY) {
+    if (!used.has(dir.sourceHandle)) {
+      return dir;
+    }
+  }
+
+  return DIRECTION_PRIORITY[0];
+}
+
 // Function to calculate layout for new nodes using dagre
-function applyLayout(action: ActionConfig, sourceNodes: IdeaNode[], results: any[], sourceMeta: any) {
+function applyLayout(action: ActionConfig, sourceNodes: IdeaNode[], results: any[], sourceMeta: any, taskId?: string) {
   const store = useStore.getState();
   const g = new dagre.graphlib.Graph();
   g.setGraph({ rankdir: 'TB', ranksep: 100, nodesep: 50 });
@@ -445,6 +481,21 @@ function applyLayout(action: ActionConfig, sourceNodes: IdeaNode[], results: any
 
   const newNodesMap: Record<string, IdeaNode> = {};
   const newEdgesMap: Edge[] = [];
+  const storeEdges = store.edges;
+  const sourceHandleMap = new Map<string, { sourceHandle: string; targetHandle: string }>();
+  if (action.output.connectionType === 'source_to_new') {
+    sourceNodes.forEach(src => {
+      sourceHandleMap.set(src.id, getFreeHandlePair(src.id, storeEdges, newEdgesMap, taskId));
+    });
+    if (taskId) {
+      pendingAllocations.set(
+        taskId,
+        new Map(
+          Array.from(sourceHandleMap.entries()).map(([nodeId, pair]) => [nodeId, pair.sourceHandle])
+        )
+      );
+    }
+  }
 
   results.forEach((res, i) => {
     const id = res.id || uuidv4();
@@ -464,19 +515,25 @@ function applyLayout(action: ActionConfig, sourceNodes: IdeaNode[], results: any
     // Connections
     if (action.output.connectionType === 'source_to_new') {
       sourceNodes.forEach(src => {
+        const { sourceHandle, targetHandle } = sourceHandleMap.get(src.id)!;
         newEdgesMap.push({
           id: `e-${src.id}-${id}`,
           source: src.id,
           target: id,
+          sourceHandle,
+          targetHandle,
           animated: true,
         });
       });
     } else if (action.output.connectionType === 'new_to_source') {
       sourceNodes.forEach(src => {
+        const { sourceHandle, targetHandle } = getFreeHandlePair(id, storeEdges, newEdgesMap, taskId);
         newEdgesMap.push({
           id: `e-${id}-${src.id}`,
           source: id,
           target: src.id,
+          sourceHandle,
+          targetHandle,
           animated: true,
         });
       });
