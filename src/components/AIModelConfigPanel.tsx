@@ -4,9 +4,29 @@ import { Button } from '@/components/ui/button';
 import { Bot, Plus, Trash2, X, Cpu, Settings } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { AIProviderConfig, AIModelConfig } from '@/types';
+import { Checkbox } from '@/components/ui/checkbox';
+import { AIProviderConfig, AIModelConfig, ModelProtocol } from '@/types';
 import { v4 as uuidv4 } from 'uuid';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+
+const PROTOCOL_LABELS: Record<ModelProtocol, string> = {
+  openai: 'OpenAI',
+  anthropic: 'Anthropic',
+  gemini: 'Gemini',
+  generic: '通用',
+};
+
+function getCapabilityLabels(model: AIModelConfig): string[] {
+  const labels: string[] = [];
+  if (model.supportsText) labels.push('文生文');
+  if (model.supportsTextToImage) labels.push('文生图');
+  if (model.supportsImageToImage) labels.push('图生图');
+  return labels;
+}
+
+function getDefaultProtocol(): ModelProtocol {
+  return 'openai';
+}
 
 export function AIModelConfigPanel() {
   const { providers, addProvider, updateProvider, deleteProvider } = useStore();
@@ -17,15 +37,17 @@ export function AIModelConfigPanel() {
     const newProvider: AIProviderConfig = {
       id: uuidv4(),
       name: '自定义供应商',
-      provider: 'custom',
       endpoint: 'https://api.openai.com/v1',
       apiKey: '',
       models: [
         {
           id: uuidv4(),
           name: '对话模型',
-          type: 'text',
-          model: 'gpt-3.5-turbo'
+          protocol: 'openai',
+          model: 'gpt-3.5-turbo',
+          supportsText: true,
+          supportsTextToImage: false,
+          supportsImageToImage: false,
         }
       ]
     };
@@ -89,8 +111,15 @@ export function AIModelConfigPanel() {
                     {provider.models.map(mod => (
                       <div key={mod.id} className="flex flex-col p-4 border rounded-2xl bg-background shadow-sm">
                          <div className="font-medium text-base mb-1">{mod.name}</div>
-                         <div className="text-xs text-muted-foreground bg-muted/50 px-2 py-1 rounded w-max mb-3">
-                           能力: {mod.type === 'text' ? '文本对话' : mod.type === 'image' ? '图像生成' : '视频生成'}
+                         <div className="flex flex-wrap gap-1 mb-3">
+                           <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded">
+                             {PROTOCOL_LABELS[mod.protocol]}
+                           </span>
+                           {getCapabilityLabels(mod).map(label => (
+                             <span key={label} className="text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded">
+                               {label}
+                             </span>
+                           ))}
                          </div>
                          <div className="text-xs font-mono text-muted-foreground truncate" title={mod.model}>
                            标识 ID: {mod.model}
@@ -133,24 +162,9 @@ export function AIModelConfigPanel() {
                        <Input value={editingProvider.name} onChange={e => setEditingProvider({...editingProvider, name: e.target.value})} placeholder="例如：DeepSeek、OpenAI、极兔AI 等" />
                      </div>
        
-                     <div className="grid grid-cols-2 gap-4">
-                       <div className="grid gap-2">
-                         <Label>预设配置 (Provider)</Label>
-                         <select 
-                           className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-                           value={editingProvider.provider}
-                           onChange={e => setEditingProvider({...editingProvider, provider: e.target.value as any})}
-                         >
-                           <option value="custom">自定义 / 其他</option>
-                           <option value="openai">OpenAI</option>
-                           <option value="anthropic">Anthropic</option>
-                           <option value="gemini">Google Gemini</option>
-                         </select>
-                       </div>
-                       <div className="grid gap-2">
-                         <Label>接口地址 (Endpoint URL)</Label>
-                         <Input value={editingProvider.endpoint || ''} onChange={e => setEditingProvider({...editingProvider, endpoint: e.target.value})} placeholder="例如 https://api.openai.com/v1" />
-                       </div>
+                     <div className="grid gap-2">
+                       <Label>接口地址 (Endpoint URL)</Label>
+                       <Input value={editingProvider.endpoint || ''} onChange={e => setEditingProvider({...editingProvider, endpoint: e.target.value})} placeholder="例如 https://api.openai.com/v1" />
                      </div>
        
                      <div className="grid gap-2">
@@ -170,7 +184,15 @@ export function AIModelConfigPanel() {
                            ...editingProvider,
                            models: [
                               ...editingProvider.models,
-                              { id: uuidv4(), name: '新模型', type: 'text', model: '' }
+                              { 
+                                id: uuidv4(), 
+                                name: '新模型', 
+                                protocol: getDefaultProtocol(),
+                                model: '',
+                                supportsText: true,
+                                supportsTextToImage: false,
+                                supportsImageToImage: false,
+                              }
                            ]
                         });
                      }}>
@@ -180,49 +202,88 @@ export function AIModelConfigPanel() {
                    
                    <div className="flex flex-col gap-4">
                      {editingProvider.models.map((mod, index) => (
-                       <div key={mod.id} className="flex flex-col sm:flex-row gap-4 items-start sm:items-center p-4 border rounded-xl bg-muted/10 relative">
-                         <div className="grid gap-2 flex-1 w-full">
-                           <Label className="text-xs text-muted-foreground">功能名称</Label>
-                           <Input value={mod.name} onChange={e => {
-                              const newModels = [...editingProvider.models];
-                              newModels[index].name = e.target.value;
-                              setEditingProvider({...editingProvider, models: newModels});
-                           }} placeholder="如：DeepSeek Chat" />
-                         </div>
-                         
-                         <div className="grid gap-2 w-full sm:w-32 shrink-0">
-                           <Label className="text-xs text-muted-foreground">能力类型</Label>
-                           <select 
-                             className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm disabled:opacity-50"
-                             value={mod.type}
-                             onChange={e => {
+                       <div key={mod.id} className="flex flex-col gap-4 p-4 border rounded-xl bg-muted/10 relative">
+                         <div className="flex flex-col sm:flex-row gap-4 items-start">
+                           <div className="grid gap-2 flex-1 w-full">
+                             <Label className="text-xs text-muted-foreground">功能名称</Label>
+                             <Input value={mod.name} onChange={e => {
                                 const newModels = [...editingProvider.models];
-                                newModels[index].type = e.target.value as any;
+                                newModels[index].name = e.target.value;
                                 setEditingProvider({...editingProvider, models: newModels});
-                             }}
-                           >
-                             <option value="text">文生文</option>
-                             <option value="image">生图</option>
-                             <option value="video">生视频</option>
-                           </select>
-                         </div>
+                             }} placeholder="如：DeepSeek Chat" />
+                           </div>
+                           
+                           <div className="grid gap-2 w-full sm:w-36 shrink-0">
+                             <Label className="text-xs text-muted-foreground">协议</Label>
+                             <select 
+                               className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm disabled:opacity-50"
+                               value={mod.protocol}
+                               onChange={e => {
+                                  const newModels = [...editingProvider.models];
+                                  newModels[index].protocol = e.target.value as ModelProtocol;
+                                  setEditingProvider({...editingProvider, models: newModels});
+                               }}
+                             >
+                               <option value="openai">OpenAI</option>
+                               <option value="anthropic">Anthropic</option>
+                               <option value="gemini">Gemini</option>
+                               <option value="generic">通用</option>
+                             </select>
+                           </div>
 
-                         <div className="grid gap-2 flex-1 w-full">
-                           <Label className="text-xs text-muted-foreground">标识 ID (Model ID)</Label>
-                           <Input value={mod.model} onChange={e => {
+                           <div className="grid gap-2 flex-1 w-full">
+                             <Label className="text-xs text-muted-foreground">标识 ID (Model ID)</Label>
+                             <Input value={mod.model} onChange={e => {
+                                const newModels = [...editingProvider.models];
+                                newModels[index].model = e.target.value;
+                                setEditingProvider({...editingProvider, models: newModels});
+                             }} placeholder="如: deepseek-chat" />
+                           </div>
+
+                           <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-destructive shrink-0 self-end mb-0.5" onClick={() => {
                               const newModels = [...editingProvider.models];
-                              newModels[index].model = e.target.value;
+                              newModels.splice(index, 1);
                               setEditingProvider({...editingProvider, models: newModels});
-                           }} placeholder="如: deepseek-chat" />
+                           }}>
+                             <Trash2 className="w-4 h-4" />
+                           </Button>
                          </div>
 
-                         <Button variant="ghost" size="icon" className="absolute sm:relative right-1 top-1 sm:right-auto sm:top-auto self-start sm:self-end mt-0 sm:mt-6 text-muted-foreground hover:text-destructive shrink-0" onClick={() => {
-                            const newModels = [...editingProvider.models];
-                            newModels.splice(index, 1);
-                            setEditingProvider({...editingProvider, models: newModels});
-                         }}>
-                           <Trash2 className="w-4 h-4" />
-                         </Button>
+                         <div className="flex flex-wrap gap-5">
+                           <label className="flex items-center gap-2 text-sm cursor-pointer">
+                             <Checkbox
+                               checked={mod.supportsText}
+                               onCheckedChange={(checked) => {
+                                 const newModels = [...editingProvider.models];
+                                 newModels[index].supportsText = checked === true;
+                                 setEditingProvider({...editingProvider, models: newModels});
+                               }}
+                             />
+                             <span>文生文</span>
+                           </label>
+                           <label className="flex items-center gap-2 text-sm cursor-pointer">
+                             <Checkbox
+                               checked={mod.supportsTextToImage}
+                               onCheckedChange={(checked) => {
+                                 const newModels = [...editingProvider.models];
+                                 newModels[index].supportsTextToImage = checked === true;
+                                 setEditingProvider({...editingProvider, models: newModels});
+                               }}
+                             />
+                             <span>文生图</span>
+                           </label>
+                           <label className="flex items-center gap-2 text-sm cursor-pointer">
+                             <Checkbox
+                               checked={mod.supportsImageToImage}
+                               onCheckedChange={(checked) => {
+                                 const newModels = [...editingProvider.models];
+                                 newModels[index].supportsImageToImage = checked === true;
+                                 setEditingProvider({...editingProvider, models: newModels});
+                               }}
+                             />
+                             <span>图生图</span>
+                           </label>
+                         </div>
                        </div>
                      ))}
                      {editingProvider.models.length === 0 && (

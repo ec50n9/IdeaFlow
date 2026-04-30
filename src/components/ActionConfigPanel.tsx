@@ -13,6 +13,14 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import Editor from '@monaco-editor/react';
 
+function getCapabilityLabels(model: { supportsText: boolean; supportsTextToImage: boolean; supportsImageToImage: boolean }): string[] {
+  const labels: string[] = [];
+  if (model.supportsText) labels.push('文生文');
+  if (model.supportsTextToImage) labels.push('文生图');
+  if (model.supportsImageToImage) labels.push('图生图');
+  return labels;
+}
+
 export function ActionConfigPanel() {
   const { actions, addAction, updateAction, deleteAction, providers } = useStore();
   const [panelOpen, setPanelOpen] = useState(false);
@@ -25,7 +33,8 @@ export function ActionConfigPanel() {
     for (const p of providers || []) {
       const m = p.models.find(mod => mod.id === modelId);
       if (m) {
-        return `${p.name} - ${m.name} (${m.model})`;
+        const caps = getCapabilityLabels(m).join(', ');
+        return `${p.name} - ${m.name} (${caps})`;
       }
     }
     return "未知模型";
@@ -253,7 +262,9 @@ export function ActionConfigPanel() {
                     {providers.map(p => (
                       <optgroup key={p.id} label={p.name}>
                         {p.models.map(m => (
-                          <option key={m.id} value={m.id}>{m.name} ({m.model})</option>
+                          <option key={m.id} value={m.id}>
+                            {m.name} [{getCapabilityLabels(m).join(', ')}]
+                          </option>
                         ))}
                       </optgroup>
                     ))}
@@ -373,7 +384,7 @@ const imgResults = await ai("画一只可爱的猫咪", "your-model-id-here");
                           <ul className="ml-4 mt-1 space-y-1 list-disc text-muted-foreground">
                             {p.models.map(m => (
                               <li key={m.id}>
-                                {m.name} ({m.type}) - <code>{m.id}</code>
+                                {m.name} ({m.protocol}, {getCapabilityLabels(m).join(', ')}) - <code>{m.id}</code>
                               </li>
                             ))}
                           </ul>

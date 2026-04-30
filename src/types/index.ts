@@ -24,18 +24,22 @@ export interface IdeaNodeData extends Record<string, unknown> {
 
 export type IdeaNode = Node<IdeaNodeData>;
 
+export type ModelProtocol = 'openai' | 'anthropic' | 'gemini' | 'generic';
+
 export interface AIModelConfig {
   id: string;
   name: string;
-  type: 'text' | 'image' | 'video'; // Capability 
-  model: string; // The model identifier string e.g. "gpt-4o"
+  protocol: ModelProtocol;
+  model: string;
+  supportsText: boolean;
+  supportsTextToImage: boolean;
+  supportsImageToImage: boolean;
 }
 
 export interface AIProviderConfig {
   id: string;
   name: string;
-  provider: 'openai' | 'anthropic' | 'gemini' | 'custom';
-  endpoint?: string; // Optional for known providers, required for custom
+  endpoint?: string;
   apiKey: string;
   models: AIModelConfig[];
 }
@@ -47,12 +51,12 @@ export interface ActionConfig {
   color?: string;
   trigger: {
     minNodes: number;
-    maxNodes: number | null; // null means infinite
+    maxNodes: number | null;
   };
   processor: {
     type: 'llm' | 'code';
-    payload: string; // Prompt template for llm, JS function for code
-    modelId?: string; // Recommended model for this action
+    payload: string;
+    modelId?: string;
   };
   output: {
     connectionType: 'source_to_new' | 'new_to_source' | 'none';

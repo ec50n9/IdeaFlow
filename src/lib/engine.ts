@@ -1,9 +1,9 @@
-import { GoogleGenAI, Type } from "@google/genai";
-import { IdeaNode, ActionConfig, AIProviderConfig, AIModelConfig } from '@/types';
+import { IdeaNode, ActionConfig, AIProviderConfig, AIModelConfig, ModelProtocol } from '@/types';
 import { v4 as uuidv4 } from 'uuid';
 import { useStore } from '@/store/useStore';
 import { Node, Edge } from '@xyflow/react';
 import { buildLayout, releaseDirections, computeNodeGroup, computeNewNodePositions } from '@/lib/layout';
+import { getAdapter, type OnChunk } from '@/lib/adapters';
 
 const taskRegistry = new Map<string, {
   abortController: AbortController;
@@ -46,300 +46,137 @@ function clearTask(taskId: string) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// SSE 流式解析辅助函数
+// 模型解析
 // ─────────────────────────────────────────────────────────────
 
-async function parseSSEResponse(
-  response: Response,
-  onChunk: (chunk: string, accumulated: string) => void,
-  extractChunk: (parsed: any) => string,
-  signal?: AbortSignal
-): Promise<string> {
-  if (!response.body) throw new Error('No response body');
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-  let accumulated = '';
-
-  try {
-    while (true) {
-      if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-
-      const chunks = buffer.split('\n\n');
-      buffer = chunks.pop() || '';
-
-      for (const chunk of chunks) {
-        const lines = chunk.split('\n');
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const data = line.slice(6).trim();
-            if (data === '[DONE]') continue;
-            try {
-              const parsed = JSON.parse(data);
-              const text = extractChunk(parsed);
-              if (text) {
-                accumulated += text;
-                onChunk(text, accumulated);
-              }
-            } catch {
-              // ignore malformed JSON in stream
-            }
-          }
-        }
-      }
-    }
-  } finally {
-    reader.releaseLock();
-  }
-
-  return accumulated;
-}
-
-async function callAI(prompt: string, modelId?: string, signal?: AbortSignal, onChunk?: (chunk: string, accumulated: string) => void) {
+function resolveModel(modelId?: string): { providerConfig: AIProviderConfig; modelConfig: AIModelConfig } {
   if (!modelId) {
     throw new Error('此动作未配置 AI 模型，请在动作配置中心选择模型。');
   }
 
-  if (signal?.aborted) {
+  const store = useStore.getState();
+
+  for (const p of store.providers || []) {
+    const m = p.models.find((mod) => mod.id === modelId);
+    if (m) {
+      return { providerConfig: p, modelConfig: m };
+    }
+  }
+
+  throw new Error(`未找到 ID 为 "${modelId}" 的模型配置，请在模型配置中心检查配置。`);
+}
+
+// ─────────────────────────────────────────────────────────────
+// 图片提取
+// ─────────────────────────────────────────────────────────────
+
+function extractImagesFromNodes(nodes: IdeaNode[]): string[] {
+  const images: string[] = [];
+  for (const node of nodes) {
+    const content = node.data.content;
+    // Markdown 图片: ![alt](url)
+    const mdMatches = content.match(/!\[.*?\]\((https?:\/\/[^)]+)\)/g);
+    if (mdMatches) {
+      images.push(...mdMatches.map((m) => m.match(/\((https?:\/\/[^)]+)\)/)![1]));
+    }
+    // Base64 data URL
+    const b64Matches = content.match(/data:image\/[^;]+;base64,[A-Za-z0-9+/=]+/g);
+    if (b64Matches) images.push(...b64Matches);
+  }
+  return images;
+}
+
+// ─────────────────────────────────────────────────────────────
+// 调用模式推断
+// ─────────────────────────────────────────────────────────────
+
+type CallMode = 'chat' | 'generateImage' | 'editImage';
+
+function inferMode(modelConfig: AIModelConfig, hasImages: boolean): CallMode {
+  if (hasImages && modelConfig.supportsImageToImage) return 'editImage';
+  if (modelConfig.supportsTextToImage && !modelConfig.supportsText) return 'generateImage';
+  return 'chat';
+}
+
+function validateCapability(modelConfig: AIModelConfig, mode: CallMode): void {
+  switch (mode) {
+    case 'chat':
+      if (!modelConfig.supportsText) {
+        throw new Error(`模型 "${modelConfig.name}" 不支持文生文功能`);
+      }
+      break;
+    case 'generateImage':
+      if (!modelConfig.supportsTextToImage) {
+        throw new Error(`模型 "${modelConfig.name}" 不支持文生图功能`);
+      }
+      break;
+    case 'editImage':
+      if (!modelConfig.supportsImageToImage) {
+        throw new Error(`模型 "${modelConfig.name}" 不支持图生图功能`);
+      }
+      break;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// 核心 AI 调用
+// ─────────────────────────────────────────────────────────────
+
+export interface CallAIOptions {
+  signal?: AbortSignal;
+  onChunk?: OnChunk;
+  images?: string[];
+  mode?: CallMode;
+}
+
+export async function callAI(
+  prompt: string,
+  modelId?: string,
+  options?: CallAIOptions
+): Promise<any> {
+  const { providerConfig, modelConfig } = resolveModel(modelId);
+
+  if (options?.signal?.aborted) {
     throw new DOMException('Aborted', 'AbortError');
   }
 
-  const store = useStore.getState();
-  
-  let providerConfig: AIProviderConfig | null = null;
-  let modelConfig: AIModelConfig | null = null;
+  const adapter = getAdapter(modelConfig.protocol);
+  const hasImages = options?.images && options.images.length > 0;
+  const mode = options?.mode || inferMode(modelConfig, hasImages);
 
-  for (const p of store.providers || []) {
-    const m = p.models.find(mod => mod.id === modelId);
-    if (m) {
-      providerConfig = p;
-      modelConfig = m;
+  validateCapability(modelConfig, mode);
+
+  const params = {
+    model: modelConfig.model,
+    prompt,
+    apiKey: providerConfig.apiKey,
+    endpoint: providerConfig.endpoint,
+    signal: options?.signal,
+  };
+
+  let result: { content: Array<{ content: string }>; payload?: any };
+
+  switch (mode) {
+    case 'chat': {
+      if (options?.onChunk && adapter.supportsStreaming) {
+        result = await adapter.chatStream(params, options.onChunk);
+      } else {
+        result = await adapter.chat(params);
+      }
+      break;
+    }
+    case 'generateImage': {
+      result = await adapter.generateImage(params);
+      break;
+    }
+    case 'editImage': {
+      result = await adapter.editImage({ ...params, images: options!.images! });
       break;
     }
   }
 
-  if (!providerConfig || !modelConfig) {
-    throw new Error(`未找到 ID 为 "${modelId}" 的模型配置，请在模型配置中心检查配置。`);
-  }
-
-  const type = modelConfig.type || 'text';
-
-  const textInstruction = '\n\n请务必只输出严格的 JSON 数组格式，例如 [{"content": "生成的内容1"}, {"content": "生成的内容2"}]。请根据任务要求决定输出的数组元素个数，如果任务没有明确要求拆分节点，则务必将所有内容整合到一个对象的 content 中，即数组中只有一个对象。不要输出任何额外的标记或解释文字。';
-
-  if (providerConfig.provider === 'gemini') {
-    const apiKey = providerConfig.apiKey || process.env.GEMINI_API_KEY || "";
-    const modelName = modelConfig.model;
-    const googleAi = new GoogleGenAI({ apiKey });
-    
-    if (type !== 'text') {
-      throw new Error("Gemini SDK wrapper currently only configured for text models here. Please use custom endpoint or text.");
-    }
-
-    const contents = prompt + textInstruction.replace(/\n/g, '\n');
-    const config = {
-      responseMimeType: "application/json" as const,
-      responseSchema: {
-        type: Type.ARRAY,
-        items: {
-          type: Type.OBJECT,
-          properties: {
-            content: {
-              type: Type.STRING,
-            }
-          },
-          required: ["content"],
-        }
-      }
-    };
-
-    if (onChunk) {
-      const stream = await googleAi.models.generateContentStream({
-        model: modelName,
-        contents,
-        config,
-      });
-
-      let accumulated = '';
-      for await (const chunk of stream) {
-        if (signal?.aborted) {
-          throw new DOMException('Aborted', 'AbortError');
-        }
-        const text = chunk.text || '';
-        if (text) {
-          accumulated += text;
-          onChunk(text, accumulated);
-        }
-      }
-
-      accumulated = accumulated.replace(/^```json\s*/, '').replace(/\s*```$/, '').trim();
-      return JSON.parse(accumulated);
-    }
-
-    const response = await googleAi.models.generateContent({
-      model: modelName,
-      contents,
-      config,
-    });
-
-    if (signal?.aborted) {
-      throw new DOMException('Aborted', 'AbortError');
-    }
-
-    let text = response.text || "[]";
-    text = text.replace(/^```json\s*/, '').replace(/\s*```$/, '').trim();
-    return JSON.parse(text);
-  }
-
-  // OpenAI or Custom (assumed OpenAI compatible format)
-  if (providerConfig.provider === 'openai' || providerConfig.provider === 'custom') {
-    let endpoint = providerConfig.endpoint || 'https://api.openai.com/v1/chat/completions';
-    
-    let body: any = {};
-    if (type === 'text') {
-      const baseUrl = endpoint.endsWith('/chat/completions') ? endpoint : `${endpoint.replace(/\/$/, '')}/chat/completions`;
-      endpoint = baseUrl;
-      body = {
-        model: modelConfig.model,
-        messages: [
-          { role: 'user', content: prompt + textInstruction.replace(/\n/g, '\n') }
-        ]
-      };
-    } else if (type === 'image') {
-      const baseUrl = endpoint.endsWith('/images/generations') ? endpoint : `${endpoint.replace(/\/$/, '')}/images/generations`;
-      endpoint = baseUrl;
-      body = {
-        model: modelConfig.model,
-        prompt: prompt,
-        n: 1
-      };
-    } else if (type === 'video') {
-      body = {
-        model: modelConfig.model,
-        prompt: prompt
-      };
-    }
-
-    if (onChunk && type === 'text') {
-      const streamBody = { ...body, stream: true };
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${providerConfig.apiKey}`
-        },
-        body: JSON.stringify(streamBody),
-        signal,
-      });
-
-      if (!response.ok) {
-        throw new Error(`AI request failed: ${response.statusText} ${await response.text()}`);
-      }
-
-      const accumulated = await parseSSEResponse(
-        response,
-        onChunk,
-        (parsed) => parsed.choices?.[0]?.delta?.content || '',
-        signal
-      );
-
-      let text = accumulated || "[]";
-      text = text.replace(/^```json\s*/, '').replace(/\s*```$/, '').trim();
-      return JSON.parse(text);
-    }
-
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${providerConfig.apiKey}`
-      },
-      body: JSON.stringify(body),
-      signal,
-    });
-
-    if (!response.ok) {
-      throw new Error(`AI request failed: ${response.statusText} ${await response.text()}`);
-    }
-
-    const data = await response.json();
-    
-    if (type === 'text') {
-      let text = data.choices[0]?.message?.content || "[]";
-      text = text.replace(/^```json\s*/, '').replace(/\s*```$/, '').trim();
-      return JSON.parse(text);
-    } else if (type === 'image') {
-      const url = data.data?.[0]?.url || "";
-      return [{ content: `![Generated Image](${url})`, payload: data }];
-    } else {
-      return [{ content: "Video/Other Generated", payload: data }];
-    }
-  }
-
-  // Anthropic
-  if (providerConfig.provider === 'anthropic') {
-    const requestBody = {
-      model: modelConfig.model,
-      max_tokens: 4096,
-      messages: [
-        { role: 'user', content: prompt + textInstruction.replace(/\n/g, '\n') }
-      ]
-    };
-
-    if (onChunk) {
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': providerConfig.apiKey,
-          'anthropic-version': '2023-06-01',
-          'anthropic-dangerously-allow-browser': 'true'
-        },
-        body: JSON.stringify({ ...requestBody, stream: true }),
-        signal,
-      });
-      
-      if (!response.ok) {
-        throw new Error(`AI request failed: ${response.statusText} ${await response.text()}`);
-      }
-
-      const accumulated = await parseSSEResponse(
-        response,
-        onChunk,
-        (parsed) => parsed.delta?.text || '',
-        signal
-      );
-
-      let text = accumulated || "[]";
-      text = text.replace(/^```json\s*/, '').replace(/\s*```$/, '').trim();
-      return JSON.parse(text);
-    }
-
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': providerConfig.apiKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerously-allow-browser': 'true'
-      },
-      body: JSON.stringify(requestBody),
-      signal,
-    });
-    
-    if (!response.ok) {
-      throw new Error(`AI request failed: ${response.statusText} ${await response.text()}`);
-    }
-
-    const data = await response.json();
-    let text = data.content?.[0]?.text || "[]";
-    text = text.replace(/^```json\s*/, '').replace(/\s*```$/, '').trim();
-    return JSON.parse(text);
-  }
-
-  throw new Error('Unsupported AI provider');
+  // 兼容旧接口：返回 content 数组（图片结果也保持数组格式）
+  return result.content;
 }
 
 // Ensure the worker is imported with ?worker suffix for Vite
@@ -400,7 +237,7 @@ export async function executeWorkerCode(
                 );
               }
             : undefined;
-          const result = await callAI(data.prompt, data.modelId, options?.signal, onChunk);
+          const result = await callAI(data.prompt, data.modelId, { signal: options?.signal, onChunk });
           worker.postMessage({ type: 'AI_RESULT', callId: data.callId, result });
         } catch (err: any) {
           worker.postMessage({ type: 'AI_RESULT', callId: data.callId, error: err.message });
@@ -504,7 +341,7 @@ export async function processAction(action: ActionConfig, selectedNodes: IdeaNod
   };
 
   try {
-    const combinedContent = selectedNodes.map(n => n.data.content).join('\n\n---\n\n');
+    const combinedContent = selectedNodes.map((n) => n.data.content).join('\n\n---\n\n');
     let results: any = null;
     let providerName = '';
     let modelName = '';
@@ -527,15 +364,20 @@ export async function processAction(action: ActionConfig, selectedNodes: IdeaNod
         basePrompt = basePrompt.replace(new RegExp(`\\\{\{node_${index}\}\}`, 'g'), node.data.content);
       });
 
+      const images = extractImagesFromNodes(selectedNodes);
+
       try {
-        results = await callAI(basePrompt, action.processor.modelId, abortController.signal, createOnChunk(taskId));
+        results = await callAI(basePrompt, action.processor.modelId, {
+          signal: abortController.signal,
+          onChunk: createOnChunk(taskId),
+          images: images.length > 0 ? images : undefined,
+        });
       } catch (e) {
         if (e instanceof DOMException && e.name === 'AbortError') throw e;
-        console.error("Failed to parse JSON response", e);
+        console.error('Failed to execute AI call', e);
         const msg = e instanceof Error ? e.message : String(e);
         results = [{ content: `请求失败: ${msg}` }];
       }
-
     } else if (action.processor.type === 'code') {
       try {
         results = await executeWorkerCode(action.processor.payload, selectedNodes, {
@@ -548,8 +390,8 @@ export async function processAction(action: ActionConfig, selectedNodes: IdeaNod
         });
       } catch (e) {
         if (e instanceof DOMException && e.name === 'AbortError') throw e;
-        console.error("Failed to execute code logic", e);
-        results = [{ content: "Error executing custom code: " + (e instanceof Error ? e.message : String(e)) }];
+        console.error('Failed to execute code logic', e);
+        results = [{ content: 'Error executing custom code: ' + (e instanceof Error ? e.message : String(e)) }];
       }
     }
 
@@ -588,7 +430,7 @@ export async function processAction(action: ActionConfig, selectedNodes: IdeaNod
       console.log('Action cancelled');
       return;
     }
-    console.error("Error processing action:", error);
+    console.error('Error processing action:', error);
   } finally {
     clearTask(taskId);
     releaseDirections(taskId);
@@ -617,7 +459,7 @@ function applyCustomGraphConfig(sourceNodes: IdeaNode[], config: any, sourceMeta
   const customNodes = rawNodes.map((n: any, i: number) => {
     const id = n.id || uuidv4();
     const pos = n.position || defaultPositions.get(tempIds[i]) || { x: 0, y: 0 };
-    
+
     return {
       id,
       type: n.type || 'ideaNode',
@@ -635,16 +477,13 @@ function applyCustomGraphConfig(sourceNodes: IdeaNode[], config: any, sourceMeta
   const customEdges = config.edges || [];
 
   store.setNodes([
-    ...store.nodes.map((node: IdeaNode) => 
-      sourceNodes.find(s => s.id === node.id)
+    ...store.nodes.map((node: IdeaNode) =>
+      sourceNodes.find((s) => s.id === node.id)
         ? { ...node, data: { ...node.data, status: 'idle' }, selected: false }
         : node
     ),
-    ...customNodes
+    ...customNodes,
   ]);
 
-  store.setEdges([
-    ...store.edges,
-    ...customEdges
-  ]);
+  store.setEdges([...store.edges, ...customEdges]);
 }
