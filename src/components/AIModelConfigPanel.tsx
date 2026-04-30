@@ -112,9 +112,11 @@ export function AIModelConfigPanel() {
                       <div key={mod.id} className="flex flex-col p-4 border rounded-2xl bg-background shadow-sm">
                          <div className="font-medium text-base mb-1">{mod.name}</div>
                          <div className="flex flex-wrap gap-1 mb-3">
-                           <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded">
-                             {PROTOCOL_LABELS[mod.protocol]}
-                           </span>
+                           {mod.protocol && PROTOCOL_LABELS[mod.protocol] && (
+                             <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded">
+                               {PROTOCOL_LABELS[mod.protocol]}
+                             </span>
+                           )}
                            {getCapabilityLabels(mod).map(label => (
                              <span key={label} className="text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded">
                                {label}
