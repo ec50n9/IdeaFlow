@@ -161,7 +161,7 @@ export class OpenAIAdapter implements ModelAdapter {
     const data = await response.json();
     const url = data.data?.[0]?.url || '';
     const b64 = data.data?.[0]?.b64_json || '';
-    const imageUrl = url || (b64 ? `data:image/png;base64,${b64}` : '');
+    const imageUrl = url || (b64 ? `data:image/png;base64,${b64.replace(/\s/g, '')}` : '');
 
     return {
       content: [{ content: imageUrl ? `![Generated Image](${imageUrl})` : '图片生成失败' }],
@@ -208,7 +208,7 @@ export class OpenAIAdapter implements ModelAdapter {
     const data = await response.json();
     const url = data.data?.[0]?.url || '';
     const b64 = data.data?.[0]?.b64_json || '';
-    const imageUrl = url || (b64 ? `data:image/png;base64,${b64}` : '');
+    const imageUrl = url || (b64 ? `data:image/png;base64,${b64.replace(/\s/g, '')}` : '');
 
     return {
       content: [{ content: imageUrl ? `![Edited Image](${imageUrl})` : '图片编辑失败' }],

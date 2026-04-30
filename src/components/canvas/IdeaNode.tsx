@@ -1,4 +1,4 @@
-import { memo, useState, useRef, useEffect } from 'react';
+import { memo, useState, useRef, useEffect, useMemo } from 'react';
 import { Handle, Position, NodeProps } from '@xyflow/react';
 import { IdeaNodeData, IdeaNode } from '@/types';
 import Markdown from 'react-markdown';
@@ -7,11 +7,39 @@ import { Sparkles, Edit3, User, X } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { cancelTask } from '@/lib/engine';
 
+function areEqual(prev: NodeProps<IdeaNode>, next: NodeProps<IdeaNode>) {
+  if (prev.id !== next.id) return false;
+  if (prev.selected !== next.selected) return false;
+  if (prev.data.content !== next.data.content) return false;
+  if (prev.data.sourceType !== next.data.sourceType) return false;
+  if (prev.data.sourceAction !== next.data.sourceAction) return false;
+  if (prev.data.sourceProvider !== next.data.sourceProvider) return false;
+  if (prev.data.sourceModel !== next.data.sourceModel) return false;
+  if (prev.data.sourceColor !== next.data.sourceColor) return false;
+  if (prev.data.isEdited !== next.data.isEdited) return false;
+  if (prev.data.status !== next.data.status) return false;
+
+  const prevRA = prev.data.runningActions || [];
+  const nextRA = next.data.runningActions || [];
+  if (prevRA.length !== nextRA.length) return false;
+  for (let i = 0; i < prevRA.length; i++) {
+    if (prevRA[i].taskId !== nextRA[i].taskId) return false;
+    if (prevRA[i].actionName !== nextRA[i].actionName) return false;
+    if (prevRA[i].actionColor !== nextRA[i].actionColor) return false;
+    // 忽略 responseLength 变化，避免流式输出时频繁重渲染
+  }
+  return true;
+}
+
 export const IdeaNodeComponent = memo(({ id, data, selected }: NodeProps<IdeaNode>) => {
   const [isEditing, setIsEditing] = useState(false);
   const [content, setContent] = useState(data.content);
   const updateNodeData = useStore((state) => state.updateNodeData);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const renderedMarkdown = useMemo(() => (
+    <Markdown>{data.content}</Markdown>
+  ), [data.content]);
 
   useEffect(() => {
     setContent(data.content);
@@ -156,9 +184,7 @@ export const IdeaNodeComponent = memo(({ id, data, selected }: NodeProps<IdeaNod
         />
       ) : (
         <div className="prose prose-sm dark:prose-invert max-w-none break-words pointer-events-none text-sm leading-relaxed">
-          {data.content ? (
-            <Markdown>{data.content}</Markdown>
-          ) : (
+          {data.content ? renderedMarkdown : (
             <span className="text-muted-foreground italic">空节点</span>
           )}
         </div>

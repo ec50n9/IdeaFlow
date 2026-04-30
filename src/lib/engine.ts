@@ -88,8 +88,8 @@ function extractImagesFromNodes(nodes: IdeaNode[]): string[] {
     if (mdMatches) {
       images.push(...mdMatches.map((m) => m.match(/\((https?:\/\/[^)]+)\)/)![1]));
     }
-    // Base64 data URL
-    const b64Matches = content.match(/data:image\/[^;]+;base64,[A-Za-z0-9+/=]+/g);
+    // Base64 data URL（支持含换行符的 base64）
+    const b64Matches = content.match(/data:image\/[^;]+;base64,[\sA-Za-z0-9+/=]+/g);
     if (b64Matches) images.push(...b64Matches);
   }
   return images;

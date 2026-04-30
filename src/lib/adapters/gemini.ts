@@ -95,7 +95,7 @@ export class GeminiAdapter implements ModelAdapter {
     if (imagePart?.inlineData?.data) {
       const mimeType = imagePart.inlineData.mimeType || 'image/png';
       const base64 = imagePart.inlineData.data;
-      const dataUrl = `data:${mimeType};base64,${base64}`;
+      const dataUrl = `data:${mimeType};base64,${base64.replace(/\s/g, '')}`;
       return {
         content: [{ content: `![Generated Image](${dataUrl})` }],
         payload: response,
@@ -159,7 +159,7 @@ export class GeminiAdapter implements ModelAdapter {
     if (imagePart?.inlineData?.data) {
       const mimeType = imagePart.inlineData.mimeType || 'image/png';
       const base64 = imagePart.inlineData.data;
-      const dataUrl = `data:${mimeType};base64,${base64}`;
+      const dataUrl = `data:${mimeType};base64,${base64.replace(/\s/g, '')}`;
       return {
         content: [{ content: `![Edited Image](${dataUrl})` }],
         payload: response,

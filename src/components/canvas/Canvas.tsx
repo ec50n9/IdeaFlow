@@ -19,16 +19,14 @@ const nodeTypes = {
 };
 
 export const Canvas = () => {
-  const {
-    nodes,
-    edges,
-    onNodesChange,
-    onEdgesChange,
-    onConnect,
-    addNode,
-    hasUserCreatedNode,
-    setHasUserCreatedNode,
-  } = useStore();
+  const nodes = useStore((state) => state.nodes);
+  const edges = useStore((state) => state.edges);
+  const onNodesChange = useStore((state) => state.onNodesChange);
+  const onEdgesChange = useStore((state) => state.onEdgesChange);
+  const onConnect = useStore((state) => state.onConnect);
+  const addNode = useStore((state) => state.addNode);
+  const hasUserCreatedNode = useStore((state) => state.hasUserCreatedNode);
+  const setHasUserCreatedNode = useStore((state) => state.setHasUserCreatedNode);
   
   const { screenToFlowPosition } = useReactFlow();
   const lastClickTime = useRef<number>(0);
