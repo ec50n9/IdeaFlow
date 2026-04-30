@@ -440,8 +440,8 @@ export function ActionConfigPanel() {
             </div>
 
             <div className="flex flex-col gap-2">
-              <h3 className="font-semibold text-base">入参方法: ai(prompt: string, modelId: string)</h3>
-              <p className="text-muted-foreground">调用大模型（处理核心逻辑），传入 prompt 和可选的模型 ID（可在模型配置中复制 ID），等待返回。</p>
+              <h3 className="font-semibold text-base">入参方法: ai(prompt: string, modelId: string, mode?: string)</h3>
+              <p className="text-muted-foreground">调用大模型（处理核心逻辑），传入 prompt、模型 ID（可在模型配置中复制）和可选的调用方式 mode（"chat" | "generateImage" | "editImage"），等待返回。</p>
               <pre className="bg-muted/50 p-4 rounded-lg overflow-auto border font-mono text-xs text-muted-foreground break-all whitespace-pre-wrap">
 {`// 调用模型必须指定模型 ID，格式为 "<供应商标识>/<模型名称>"
 const results = await ai("将以下内容翻译成英文: \\n" + nodes[0].data.content, "openai/gpt-4o");
@@ -503,7 +503,8 @@ const editResults = await ai("把这只猫变成水彩风格", "openai/gpt-image
             <div className="flex flex-col gap-2">
               <h3 className="font-semibold text-base">图配置模式示例</h3>
               <pre className="bg-muted/50 p-4 rounded-lg overflow-auto border font-mono text-xs text-muted-foreground break-all whitespace-pre-wrap">
-{`const result = await ai("总结: " + nodes[0].data.content);
+{`// 调用 ai 获取结果（默认 mode 为 "chat"）
+const result = await ai("总结: " + nodes[0].data.content, "openai/gpt-4o");
 const newNodeId = "node-" + Math.random();
 
 return {
@@ -533,8 +534,8 @@ return {
 {`// 1. 获取所有选中节点的文本并拼接
 const text = nodes.map(n => n.data.content).join("\\n");
 
-// 2. 调用模型处理数据
-const results = await ai(\`请提炼以下内容的核心观点：\\n\${text}\`);
+// 2. 调用模型处理数据（文生文，mode 默认为 "chat"）
+const results = await ai(\`请提炼以下内容的核心观点：\\n\${text}\`, "openai/gpt-4o");
 
 // 3. 将结果输出（新节点的生成由外部连线方式决定）
 return results;`}
