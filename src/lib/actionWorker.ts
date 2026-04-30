@@ -3,7 +3,7 @@ self.onmessage = async (e) => {
 
   try {
     // create the ai function
-    const ai = (prompt: string, modelId?: string) => {
+    const ai = (prompt: string, modelId: string) => {
       return new Promise((resolve, reject) => {
         const callId = Math.random().toString(36).substring(7);
         const aiListener = (evt: MessageEvent) => {

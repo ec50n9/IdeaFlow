@@ -28,9 +28,8 @@ export type ModelProtocol = 'openai' | 'anthropic' | 'gemini' | 'generic';
 
 export interface AIModelConfig {
   id: string;
-  name: string;
   protocol: ModelProtocol;
-  model: string;
+  model: string; // 模型名称（同一供应商内唯一），也是 API model identifier
   supportsText: boolean;
   supportsTextToImage: boolean;
   supportsImageToImage: boolean;
@@ -38,7 +37,8 @@ export interface AIModelConfig {
 
 export interface AIProviderConfig {
   id: string;
-  name: string;
+  name: string; // 显示名称
+  key: string;  // 供应商标识（唯一），如 "openai"
   endpoint?: string;
   apiKey: string;
   models: AIModelConfig[];
@@ -56,7 +56,7 @@ export interface ActionConfig {
   processor: {
     type: 'llm' | 'code';
     payload: string;
-    modelId?: string;
+    modelId?: string; // 格式: "<供应商标识>/<模型名称>"
   };
   output: {
     connectionType: 'source_to_new' | 'new_to_source' | 'none';

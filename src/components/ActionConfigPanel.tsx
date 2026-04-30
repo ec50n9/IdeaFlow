@@ -28,16 +28,17 @@ export function ActionConfigPanel() {
   const [helpOpen, setHelpOpen] = useState(false);
 
   // Helper to get model details
-  const getModelLabel = (modelId?: string) => {
-    if (!modelId) return "未配置模型";
-    for (const p of providers || []) {
-      const m = p.models.find(mod => mod.id === modelId);
-      if (m) {
-        const caps = getCapabilityLabels(m).join(', ');
-        return `${p.name} - ${m.name} (${caps})`;
-      }
-    }
-    return "未知模型";
+  const getModelLabel = (modelRef?: string) => {
+    if (!modelRef) return "未配置模型";
+    const parts = modelRef.split('/');
+    if (parts.length !== 2) return "未知模型";
+    const [pKey, mName] = parts;
+    const p = providers?.find(prov => prov.key === pKey);
+    if (!p) return "未知供应商";
+    const m = p.models.find(mod => mod.model === mName);
+    if (!m) return "未知模型";
+    const caps = getCapabilityLabels(m).join(', ');
+    return `${p.name} - ${m.model} (${caps})`;
   };
 
   const handleAddNew = () => {
@@ -263,7 +264,7 @@ export function ActionConfigPanel() {
                       <optgroup key={p.id} label={p.name}>
                         {p.models.map(m => (
                           <option key={m.id} value={m.id}>
-                            {m.name} [{getCapabilityLabels(m).join(', ')}]
+                            {m.model} [{getCapabilityLabels(m).join(', ')}]
                           </option>
                         ))}
                       </optgroup>
@@ -359,14 +360,14 @@ export function ActionConfigPanel() {
             </div>
 
             <div className="flex flex-col gap-2">
-              <h3 className="font-semibold text-base">入参方法: ai(prompt: string, modelId?: string)</h3>
+              <h3 className="font-semibold text-base">入参方法: ai(prompt: string, modelId: string)</h3>
               <p className="text-muted-foreground">调用大模型（处理核心逻辑），传入 prompt 和可选的模型 ID（可在模型配置中复制 ID），等待返回。</p>
               <pre className="bg-muted/50 p-4 rounded-lg overflow-auto border font-mono text-xs text-muted-foreground break-all whitespace-pre-wrap">
-{`// 调用模型（需在动作配置中选择模型，或传入模型ID）
-const results = await ai("将以下内容翻译成英文: \\n" + nodes[0].data.content);
+{`// 调用模型必须指定模型 ID，格式为 "<供应商标识>/<模型名称>"
+const results = await ai("将以下内容翻译成英文: \\n" + nodes[0].data.content, "openai/gpt-4o");
 
-// 指定自定义模型 (使用在模型配置中心创建的 ID)
-const imgResults = await ai("画一只可爱的猫咪", "your-model-id-here");
+// 指定图片模型
+const imgResults = await ai("画一只可爱的猫咪", "openai/gpt-image-2");
 
 // 返回值格式
 // [
@@ -384,7 +385,8 @@ const imgResults = await ai("画一只可爱的猫咪", "your-model-id-here");
                           <ul className="ml-4 mt-1 space-y-1 list-disc text-muted-foreground">
                             {p.models.map(m => (
                               <li key={m.id}>
-                                {m.name} ({m.protocol}, {getCapabilityLabels(m).join(', ')}) - <code>{m.id}</code>
+                                <code className="text-primary">{p.key || '?'}/{m.model}</code>
+                                <span className="text-muted-foreground"> ({m.protocol}, {getCapabilityLabels(m).join(', ')})</span>
                               </li>
                             ))}
                           </ul>

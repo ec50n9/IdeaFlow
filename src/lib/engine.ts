@@ -49,21 +49,30 @@ function clearTask(taskId: string) {
 // 模型解析
 // ─────────────────────────────────────────────────────────────
 
-function resolveModel(modelId?: string): { providerConfig: AIProviderConfig; modelConfig: AIModelConfig } {
-  if (!modelId) {
+function resolveModel(modelRef?: string): { providerConfig: AIProviderConfig; modelConfig: AIModelConfig } {
+  if (!modelRef) {
     throw new Error('此动作未配置 AI 模型，请在动作配置中心选择模型。');
   }
 
-  const store = useStore.getState();
-
-  for (const p of store.providers || []) {
-    const m = p.models.find((mod) => mod.id === modelId);
-    if (m) {
-      return { providerConfig: p, modelConfig: m };
-    }
+  const parts = modelRef.split('/');
+  if (parts.length !== 2) {
+    throw new Error(`模型引用格式错误: "${modelRef}"，应为 "<供应商标识>/<模型名称>"`);
   }
 
-  throw new Error(`未找到 ID 为 "${modelId}" 的模型配置，请在模型配置中心检查配置。`);
+  const [providerKey, modelName] = parts;
+  const store = useStore.getState();
+
+  const provider = store.providers.find((p) => p.key === providerKey);
+  if (!provider) {
+    throw new Error(`未找到供应商标识 "${providerKey}"，请在模型配置中心检查配置。`);
+  }
+
+  const model = provider.models.find((m) => m.model === modelName);
+  if (!model) {
+    throw new Error(`未找到模型 "${modelName}"（供应商: ${providerKey}），请在模型配置中心检查配置。`);
+  }
+
+  return { providerConfig: provider, modelConfig: model };
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -102,17 +111,17 @@ function validateCapability(modelConfig: AIModelConfig, mode: CallMode): void {
   switch (mode) {
     case 'chat':
       if (!modelConfig.supportsText) {
-        throw new Error(`模型 "${modelConfig.name}" 不支持文生文功能`);
+        throw new Error(`模型 "${modelConfig.model}" 不支持文生文功能`);
       }
       break;
     case 'generateImage':
       if (!modelConfig.supportsTextToImage) {
-        throw new Error(`模型 "${modelConfig.name}" 不支持文生图功能`);
+        throw new Error(`模型 "${modelConfig.model}" 不支持文生图功能`);
       }
       break;
     case 'editImage':
       if (!modelConfig.supportsImageToImage) {
-        throw new Error(`模型 "${modelConfig.name}" 不支持图生图功能`);
+        throw new Error(`模型 "${modelConfig.model}" 不支持图生图功能`);
       }
       break;
   }
@@ -349,12 +358,13 @@ export async function processAction(action: ActionConfig, selectedNodes: IdeaNod
     if (action.processor.type === 'llm') {
       const freshStore = useStore.getState();
       if (action.processor.modelId) {
-        for (const p of freshStore.providers || []) {
-          const m = p.models.find((mod: any) => mod.id === action.processor.modelId);
-          if (m) {
+        const parts = action.processor.modelId.split('/');
+        if (parts.length === 2) {
+          const [pKey, mName] = parts;
+          const p = freshStore.providers.find((prov) => prov.key === pKey);
+          if (p) {
             providerName = p.name;
-            modelName = m.name;
-            break;
+            modelName = mName;
           }
         }
       }

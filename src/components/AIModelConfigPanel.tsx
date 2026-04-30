@@ -37,12 +37,12 @@ export function AIModelConfigPanel() {
     const newProvider: AIProviderConfig = {
       id: uuidv4(),
       name: '自定义供应商',
+      key: 'custom',
       endpoint: 'https://api.openai.com/v1',
       apiKey: '',
       models: [
         {
           id: uuidv4(),
-          name: '对话模型',
           protocol: 'openai',
           model: 'gpt-3.5-turbo',
           supportsText: true,
@@ -110,7 +110,7 @@ export function AIModelConfigPanel() {
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-6">
                     {provider.models.map(mod => (
                       <div key={mod.id} className="flex flex-col p-4 border rounded-2xl bg-background shadow-sm">
-                         <div className="font-medium text-base mb-1">{mod.name}</div>
+                         <div className="font-medium text-base mb-1">{mod.model}</div>
                          <div className="flex flex-wrap gap-1 mb-3">
                            {mod.protocol && PROTOCOL_LABELS[mod.protocol] && (
                              <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded">
@@ -163,6 +163,11 @@ export function AIModelConfigPanel() {
                        <Label>供应商名称</Label>
                        <Input value={editingProvider.name} onChange={e => setEditingProvider({...editingProvider, name: e.target.value})} placeholder="例如：DeepSeek、OpenAI、极兔AI 等" />
                      </div>
+
+                     <div className="grid gap-2">
+                       <Label>供应商标识（唯一）</Label>
+                       <Input value={editingProvider.key} onChange={e => setEditingProvider({...editingProvider, key: e.target.value})} placeholder="如: openai, deepseek" />
+                     </div>
        
                      <div className="grid gap-2">
                        <Label>接口地址 (Endpoint URL)</Label>
@@ -188,7 +193,6 @@ export function AIModelConfigPanel() {
                               ...editingProvider.models,
                               { 
                                 id: uuidv4(), 
-                                name: '新模型', 
                                 protocol: getDefaultProtocol(),
                                 model: '',
                                 supportsText: true,
@@ -207,12 +211,12 @@ export function AIModelConfigPanel() {
                        <div key={mod.id} className="flex flex-col gap-4 p-4 border rounded-xl bg-muted/10 relative">
                          <div className="flex flex-col sm:flex-row gap-4 items-start">
                            <div className="grid gap-2 flex-1 w-full">
-                             <Label className="text-xs text-muted-foreground">功能名称</Label>
-                             <Input value={mod.name} onChange={e => {
+                             <Label className="text-xs text-muted-foreground">模型名称</Label>
+                             <Input value={mod.model} onChange={e => {
                                 const newModels = [...editingProvider.models];
-                                newModels[index].name = e.target.value;
+                                newModels[index].model = e.target.value;
                                 setEditingProvider({...editingProvider, models: newModels});
-                             }} placeholder="如：DeepSeek Chat" />
+                             }} placeholder="如: gpt-4o, deepseek-chat" />
                            </div>
                            
                            <div className="grid gap-2 w-full sm:w-36 shrink-0">
@@ -231,15 +235,6 @@ export function AIModelConfigPanel() {
                                <option value="gemini">Gemini</option>
                                <option value="generic">通用</option>
                              </select>
-                           </div>
-
-                           <div className="grid gap-2 flex-1 w-full">
-                             <Label className="text-xs text-muted-foreground">标识 ID (Model ID)</Label>
-                             <Input value={mod.model} onChange={e => {
-                                const newModels = [...editingProvider.models];
-                                newModels[index].model = e.target.value;
-                                setEditingProvider({...editingProvider, models: newModels});
-                             }} placeholder="如: deepseek-chat" />
                            </div>
 
                            <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-destructive shrink-0 self-end mb-0.5" onClick={() => {
