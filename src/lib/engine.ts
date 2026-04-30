@@ -465,11 +465,32 @@ function getFreeHandlePair(nodeId: string, existingEdges: Edge[], newEdges: Edge
   return DIRECTION_PRIORITY[0];
 }
 
+function inferRankdir(action: ActionConfig, newEdgesMap: Edge[], sourceNodes: IdeaNode[]): 'TB' | 'BT' | 'LR' | 'RL' {
+  const edge = newEdgesMap[0];
+  if (!edge?.sourceHandle) return 'TB';
+  const handle = edge.sourceHandle;
+  if (action.output.connectionType === 'source_to_new') {
+    switch (handle) {
+      case 'top-source': return 'BT';
+      case 'bottom-source': return 'TB';
+      case 'left-source': return 'RL';
+      case 'right-source': return 'LR';
+    }
+  } else if (action.output.connectionType === 'new_to_source') {
+    switch (handle) {
+      case 'top-source': return 'BT';
+      case 'bottom-source': return 'TB';
+      case 'left-source': return 'RL';
+      case 'right-source': return 'LR';
+    }
+  }
+  return 'TB';
+}
+
 // Function to calculate layout for new nodes using dagre
 function applyLayout(action: ActionConfig, sourceNodes: IdeaNode[], results: any[], sourceMeta: any, taskId?: string) {
   const store = useStore.getState();
   const g = new dagre.graphlib.Graph();
-  g.setGraph({ rankdir: 'TB', ranksep: 100, nodesep: 50 });
   g.setDefaultEdgeLabel(() => ({}));
 
   // We only layout the newly created nodes relative to a fake "root" representing the selected nodes bounding box
@@ -540,20 +561,27 @@ function applyLayout(action: ActionConfig, sourceNodes: IdeaNode[], results: any
     }
   });
 
+  const rankdir = inferRankdir(action, newEdgesMap, sourceNodes);
+  g.setGraph({ rankdir, ranksep: 100, nodesep: 50 });
   dagre.layout(g);
 
-  // Now, calculate the bounding box bottom center of the source nodes
-  let minX = Infinity, maxX = -Infinity, maxY = -Infinity;
+  // Now, calculate the bounding box of the source nodes
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
   sourceNodes.forEach((n) => {
     if (n.position.x < minX) minX = n.position.x;
+    if (n.position.y < minY) minY = n.position.y;
     const right = n.position.x + (n.measured?.width || nodeWidth);
     if (right > maxX) maxX = right;
     const bottom = n.position.y + (n.measured?.height || nodeHeight);
     if (bottom > maxY) maxY = bottom;
   });
 
-  const sourceCenterX = minX + (maxX - minX) / 2;
-  const sourceBottomY = maxY;
+  const sourceCenterX = minX === Infinity ? 0 : minX + (maxX - minX) / 2;
+  const sourceCenterY = minY === Infinity ? 0 : minY + (maxY - minY) / 2;
+  const sourceTopY = minY === Infinity ? 0 : minY;
+  const sourceBottomY = maxY === -Infinity ? 0 : maxY;
+  const sourceLeftX = minX === Infinity ? 0 : minX;
+  const sourceRightX = maxX === -Infinity ? 0 : maxX;
 
   // The root node in dagre has some position. We need to offset the children
   const rootPos = g.node(rootId);
@@ -563,15 +591,43 @@ function applyLayout(action: ActionConfig, sourceNodes: IdeaNode[], results: any
     const originalRes = results.find(r => r.id === n.id || (!r.id && n.content === r.content));
     const hasCustomPosition = originalRes && originalRes.position;
 
-    return {
-      ...n,
-      position: hasCustomPosition
-        ? n.position
-        : {
-            x: sourceCenterX + (dagreNode.x - rootPos.x) - nodeWidth / 2,
-            y: sourceBottomY + (dagreNode.y - rootPos.y) + 50, // 50px gap below the lowest source node
-          }
-    };
+    const dx = dagreNode.x - rootPos.x;
+    const dy = dagreNode.y - rootPos.y;
+
+    let pos: { x: number; y: number };
+    if (hasCustomPosition) {
+      pos = n.position;
+    } else {
+      switch (rankdir) {
+        case 'BT':
+          pos = {
+            x: sourceCenterX + dx - nodeWidth / 2,
+            y: sourceTopY + dy - 50,
+          };
+          break;
+        case 'LR':
+          pos = {
+            x: sourceRightX + dx + 50,
+            y: sourceCenterY + dy - nodeHeight / 2,
+          };
+          break;
+        case 'RL':
+          pos = {
+            x: sourceLeftX + dx - 50,
+            y: sourceCenterY + dy - nodeHeight / 2,
+          };
+          break;
+        case 'TB':
+        default:
+          pos = {
+            x: sourceCenterX + dx - nodeWidth / 2,
+            y: sourceBottomY + dy + 50,
+          };
+          break;
+      }
+    }
+
+    return { ...n, position: pos };
   });
 
 
