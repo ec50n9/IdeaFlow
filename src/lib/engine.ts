@@ -1,19 +1,15 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { IdeaNode, ActionConfig, AIProviderConfig, AIModelConfig } from '@/types';
-import dagre from 'dagre';
 import { v4 as uuidv4 } from 'uuid';
 import { useStore } from '@/store/useStore';
 import { Node, Edge } from '@xyflow/react';
+import { buildLayout, releaseDirections, computeNodeGroup, computeNewNodePositions } from '@/lib/layout';
 
 const taskRegistry = new Map<string, {
   abortController: AbortController;
   worker?: Worker;
   nodeIds: string[];
 }>();
-
-// Tracks source-handle allocations that have been decided but not yet written to the store.
-// Used to prevent concurrent actions from picking the same free direction.
-const pendingAllocations = new Map<string, Map<string, string>>(); // taskId -> nodeId -> sourceHandle
 
 export function cancelTask(taskId: string) {
   const task = taskRegistry.get(taskId);
@@ -264,6 +260,38 @@ export async function executeWorkerCode(
   });
 }
 
+// ─────────────────────────────────────────────────────────────
+// 布局提交辅助函数
+// ─────────────────────────────────────────────────────────────
+
+function commitLayout(
+  action: ActionConfig,
+  sourceNodes: IdeaNode[],
+  results: any[],
+  sourceMeta: Record<string, any>,
+  taskId?: string
+) {
+  const store = useStore.getState();
+  const { newNodes, newEdges, updatedSourceNodes } = buildLayout({
+    actionConnectionType: action.output.connectionType,
+    sourceNodes,
+    results,
+    sourceMeta,
+    existingNodes: store.nodes,
+    existingEdges: store.edges,
+    taskId,
+  });
+
+  store.setNodes([
+    ...store.nodes.map((node) => {
+      const updated = updatedSourceNodes.find((u) => u.id === node.id);
+      return updated || node;
+    }),
+    ...newNodes,
+  ]);
+  store.setEdges([...store.edges, ...newEdges]);
+}
+
 // Execute an Action
 export async function processAction(action: ActionConfig, selectedNodes: IdeaNode[]) {
   const taskId = uuidv4();
@@ -352,7 +380,7 @@ export async function processAction(action: ActionConfig, selectedNodes: IdeaNod
 
       if (Array.isArray(results)) {
         if (results.length > 0) {
-          applyLayout(action, selectedNodes, results, sourceMeta, taskId);
+          commitLayout(action, selectedNodes, results, sourceMeta, taskId);
         }
       } else if (typeof results === 'object') {
         if (results.nodes || results.edges) {
@@ -360,14 +388,14 @@ export async function processAction(action: ActionConfig, selectedNodes: IdeaNod
           applyCustomGraphConfig(selectedNodes, results, sourceMeta);
         } else if (results.content) {
           // Single object acting as a node payload
-          applyLayout(action, selectedNodes, [results], sourceMeta, taskId);
+          commitLayout(action, selectedNodes, [results], sourceMeta, taskId);
         } else {
           // Fallback, treat it as empty or missing expected fields
-          applyLayout(action, selectedNodes, [results], sourceMeta, taskId);
+          commitLayout(action, selectedNodes, [results], sourceMeta, taskId);
         }
       } else if (typeof results === 'string') {
         // Raw string
-        applyLayout(action, selectedNodes, [{ content: results }], sourceMeta, taskId);
+        commitLayout(action, selectedNodes, [{ content: results }], sourceMeta, taskId);
       }
     }
   } catch (error) {
@@ -378,33 +406,35 @@ export async function processAction(action: ActionConfig, selectedNodes: IdeaNod
     console.error("Error processing action:", error);
   } finally {
     clearTask(taskId);
-    pendingAllocations.delete(taskId);
+    releaseDirections(taskId);
   }
 }
+
+// ─────────────────────────────────────────────────────────────
+// 自定义图表配置（Code Action 自定义 nodes/edges）
+// ─────────────────────────────────────────────────────────────
 
 function applyCustomGraphConfig(sourceNodes: IdeaNode[], config: any, sourceMeta: any) {
   const store = useStore.getState();
 
-  let minX = Infinity, maxX = -Infinity, maxY = -Infinity;
-  sourceNodes.forEach((n) => {
-    if (n.position.x < minX) minX = n.position.x;
-    const right = n.position.x + (n.measured?.width || 250);
-    if (right > maxX) maxX = right;
-    const bottom = n.position.y + (n.measured?.height || 100);
-    if (bottom > maxY) maxY = bottom;
-  });
+  const sourceGroup = computeNodeGroup(sourceNodes);
+  const rawNodes = config.nodes || [];
+  const tempIds = rawNodes.map((_: any, i: number) => `custom-pos-${i}`);
 
-  const sourceCenterX = minX === Infinity ? 0 : minX + (maxX - minX) / 2;
-  const sourceBottomY = maxY === -Infinity ? 0 : maxY + 50;
+  // 为没有 position 的节点计算默认位置（默认 fan-out down）
+  const defaultPositions = computeNewNodePositions(
+    'down',
+    sourceGroup.bbox,
+    sourceGroup.center,
+    tempIds
+  );
 
-  const customNodes = (config.nodes || []).map((n: any, i: number) => {
-    let pos = n.position;
-    if (!pos) {
-      pos = { x: sourceCenterX + (i * 270) - ((config.nodes.length * 270)/2), y: sourceBottomY };
-    }
+  const customNodes = rawNodes.map((n: any, i: number) => {
+    const id = n.id || uuidv4();
+    const pos = n.position || defaultPositions.get(tempIds[i]) || { x: 0, y: 0 };
     
     return {
-      id: n.id || uuidv4(),
+      id,
       type: n.type || 'ideaNode',
       ...n,
       position: pos,
@@ -431,218 +461,5 @@ function applyCustomGraphConfig(sourceNodes: IdeaNode[], config: any, sourceMeta
   store.setEdges([
     ...store.edges,
     ...customEdges
-  ]);
-}
-
-const DIRECTION_PRIORITY = [
-  { sourceHandle: 'bottom-source', targetHandle: 'top-target' },
-  { sourceHandle: 'top-source', targetHandle: 'bottom-target' },
-  { sourceHandle: 'left-source', targetHandle: 'right-target' },
-  { sourceHandle: 'right-source', targetHandle: 'left-target' },
-];
-
-function getFreeHandlePair(nodeId: string, existingEdges: Edge[], newEdges: Edge[], excludeTaskId?: string): { sourceHandle: string; targetHandle: string } {
-  const allOutgoing = [
-    ...existingEdges.filter(e => e.source === nodeId),
-    ...newEdges.filter(e => e.source === nodeId),
-  ];
-  const used = new Set(allOutgoing.map(e => e.sourceHandle || 'bottom-source'));
-
-  // Also consider directions allocated by other concurrently-running tasks
-  for (const [otherTaskId, allocations] of pendingAllocations) {
-    if (excludeTaskId && otherTaskId === excludeTaskId) continue;
-    if (allocations.has(nodeId)) {
-      used.add(allocations.get(nodeId)!);
-    }
-  }
-
-  for (const dir of DIRECTION_PRIORITY) {
-    if (!used.has(dir.sourceHandle)) {
-      return dir;
-    }
-  }
-
-  return DIRECTION_PRIORITY[0];
-}
-
-function inferRankdir(action: ActionConfig, newEdgesMap: Edge[], sourceNodes: IdeaNode[]): 'TB' | 'BT' | 'LR' | 'RL' {
-  const edge = newEdgesMap[0];
-  if (!edge?.sourceHandle) return 'TB';
-  const handle = edge.sourceHandle;
-  if (action.output.connectionType === 'source_to_new') {
-    switch (handle) {
-      case 'top-source': return 'BT';
-      case 'bottom-source': return 'TB';
-      case 'left-source': return 'RL';
-      case 'right-source': return 'LR';
-    }
-  } else if (action.output.connectionType === 'new_to_source') {
-    switch (handle) {
-      case 'top-source': return 'BT';
-      case 'bottom-source': return 'TB';
-      case 'left-source': return 'RL';
-      case 'right-source': return 'LR';
-    }
-  }
-  return 'TB';
-}
-
-// Function to calculate layout for new nodes using dagre
-function applyLayout(action: ActionConfig, sourceNodes: IdeaNode[], results: any[], sourceMeta: any, taskId?: string) {
-  const store = useStore.getState();
-  const g = new dagre.graphlib.Graph();
-  g.setDefaultEdgeLabel(() => ({}));
-
-  // We only layout the newly created nodes relative to a fake "root" representing the selected nodes bounding box
-  const rootId = 'root-group';
-  const nodeWidth = 250;
-  const nodeHeight = 100;
-
-  g.setNode(rootId, { width: nodeWidth, height: nodeHeight });
-
-  const newNodesMap: Record<string, IdeaNode> = {};
-  const newEdgesMap: Edge[] = [];
-  const storeEdges = store.edges;
-  const sourceHandleMap = new Map<string, { sourceHandle: string; targetHandle: string }>();
-  if (action.output.connectionType === 'source_to_new') {
-    sourceNodes.forEach(src => {
-      sourceHandleMap.set(src.id, getFreeHandlePair(src.id, storeEdges, newEdgesMap, taskId));
-    });
-    if (taskId) {
-      pendingAllocations.set(
-        taskId,
-        new Map(
-          Array.from(sourceHandleMap.entries()).map(([nodeId, pair]) => [nodeId, pair.sourceHandle])
-        )
-      );
-    }
-  }
-
-  results.forEach((res, i) => {
-    const id = res.id || uuidv4();
-    g.setNode(id, { width: nodeWidth, height: nodeHeight });
-    
-    // Connect root to child in dagre memory
-    g.setEdge(rootId, id);
-
-    newNodesMap[id] = {
-      id,
-      type: res.type || 'ideaNode',
-      ...res,
-      position: res.position || { x: 0, y: 0 },
-      data: { content: res.content || res.data?.content || '', ...res.data, ...sourceMeta, status: 'idle' },
-    };
-
-    // Connections
-    if (action.output.connectionType === 'source_to_new') {
-      sourceNodes.forEach(src => {
-        const { sourceHandle, targetHandle } = sourceHandleMap.get(src.id)!;
-        newEdgesMap.push({
-          id: `e-${src.id}-${id}`,
-          source: src.id,
-          target: id,
-          sourceHandle,
-          targetHandle,
-          animated: true,
-        });
-      });
-    } else if (action.output.connectionType === 'new_to_source') {
-      sourceNodes.forEach(src => {
-        const { sourceHandle, targetHandle } = getFreeHandlePair(id, storeEdges, newEdgesMap, taskId);
-        newEdgesMap.push({
-          id: `e-${id}-${src.id}`,
-          source: id,
-          target: src.id,
-          sourceHandle,
-          targetHandle,
-          animated: true,
-        });
-      });
-    }
-  });
-
-  const rankdir = inferRankdir(action, newEdgesMap, sourceNodes);
-  g.setGraph({ rankdir, ranksep: 100, nodesep: 50 });
-  dagre.layout(g);
-
-  // Now, calculate the bounding box of the source nodes
-  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-  sourceNodes.forEach((n) => {
-    if (n.position.x < minX) minX = n.position.x;
-    if (n.position.y < minY) minY = n.position.y;
-    const right = n.position.x + (n.measured?.width || nodeWidth);
-    if (right > maxX) maxX = right;
-    const bottom = n.position.y + (n.measured?.height || nodeHeight);
-    if (bottom > maxY) maxY = bottom;
-  });
-
-  const sourceCenterX = minX === Infinity ? 0 : minX + (maxX - minX) / 2;
-  const sourceCenterY = minY === Infinity ? 0 : minY + (maxY - minY) / 2;
-  const sourceTopY = minY === Infinity ? 0 : minY;
-  const sourceBottomY = maxY === -Infinity ? 0 : maxY;
-  const sourceLeftX = minX === Infinity ? 0 : minX;
-  const sourceRightX = maxX === -Infinity ? 0 : maxX;
-
-  // The root node in dagre has some position. We need to offset the children
-  const rootPos = g.node(rootId);
-
-  const finalNewNodes = Object.values(newNodesMap).map((n: any) => {
-    const dagreNode = g.node(n.id);
-    const originalRes = results.find(r => r.id === n.id || (!r.id && n.content === r.content));
-    const hasCustomPosition = originalRes && originalRes.position;
-
-    const dx = dagreNode.x - rootPos.x;
-    const dy = dagreNode.y - rootPos.y;
-
-    let pos: { x: number; y: number };
-    if (hasCustomPosition) {
-      pos = n.position;
-    } else {
-      switch (rankdir) {
-        case 'BT':
-          pos = {
-            x: sourceCenterX + dx - nodeWidth / 2,
-            y: sourceTopY + dy - 50,
-          };
-          break;
-        case 'LR':
-          pos = {
-            x: sourceRightX + dx + 50,
-            y: sourceCenterY + dy - nodeHeight / 2,
-          };
-          break;
-        case 'RL':
-          pos = {
-            x: sourceLeftX + dx - 50,
-            y: sourceCenterY + dy - nodeHeight / 2,
-          };
-          break;
-        case 'TB':
-        default:
-          pos = {
-            x: sourceCenterX + dx - nodeWidth / 2,
-            y: sourceBottomY + dy + 50,
-          };
-          break;
-      }
-    }
-
-    return { ...n, position: pos };
-  });
-
-
-  // Revert selected nodes status to idle and append new nodes
-  store.setNodes([
-    ...store.nodes.map((node: IdeaNode) => 
-      sourceNodes.find(s => s.id === node.id)
-        ? { ...node, data: { ...node.data, status: 'idle' }, selected: false }
-        : node
-    ),
-    ...finalNewNodes
-  ]);
-
-  store.setEdges([
-    ...store.edges,
-    ...newEdgesMap
   ]);
 }
