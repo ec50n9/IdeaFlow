@@ -1,4 +1,4 @@
-import { IdeaNode, ActionConfig, AIProviderConfig, AIModelConfig, ModelProtocol } from '@/types';
+import { IdeaNode, ActionConfig, AIProviderConfig, AIModelConfig, ModelProtocol, CallMode } from '@/types';
 import { v4 as uuidv4 } from 'uuid';
 import { useStore } from '@/store/useStore';
 import { Node, Edge } from '@xyflow/react';
@@ -98,8 +98,6 @@ function extractImagesFromNodes(nodes: IdeaNode[]): string[] {
 // ─────────────────────────────────────────────────────────────
 // 调用模式推断
 // ─────────────────────────────────────────────────────────────
-
-type CallMode = 'chat' | 'generateImage' | 'editImage';
 
 function inferMode(modelConfig: AIModelConfig, hasImages: boolean): CallMode {
   if (hasImages && modelConfig.supportsImageToImage) return 'editImage';
@@ -247,7 +245,7 @@ export async function executeWorkerCode(
                 );
               }
             : undefined;
-          const result = await callAI(data.prompt, data.modelId, { signal: options?.signal, onChunk });
+          const result = await callAI(data.prompt, data.modelId, { signal: options?.signal, onChunk, mode: data.mode });
           worker.postMessage({ type: 'AI_RESULT', callId: data.callId, result });
         } catch (err: any) {
           worker.postMessage({ type: 'AI_RESULT', callId: data.callId, error: err.message });
@@ -377,11 +375,22 @@ export async function processAction(action: ActionConfig, selectedNodes: IdeaNod
 
       const images = extractImagesFromNodes(selectedNodes);
 
+      let mode: CallMode | undefined = action.processor.mode;
+      if (!mode && action.processor.modelId) {
+        try {
+          const { modelConfig } = resolveModel(action.processor.modelId);
+          mode = inferMode(modelConfig, images.length > 0);
+        } catch {
+          // 模型解析失败时留给 callAI 自行抛出错误
+        }
+      }
+
       try {
         results = await callAI(basePrompt, action.processor.modelId, {
           signal: abortController.signal,
           onChunk: createOnChunk(taskId),
           images: images.length > 0 ? images : undefined,
+          mode,
         });
       } catch (e) {
         if (e instanceof DOMException && e.name === 'AbortError') throw e;

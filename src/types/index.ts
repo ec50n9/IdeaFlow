@@ -26,6 +26,8 @@ export type IdeaNode = Node<IdeaNodeData>;
 
 export type ModelProtocol = 'openai' | 'anthropic' | 'gemini' | 'generic';
 
+export type CallMode = 'chat' | 'generateImage' | 'editImage';
+
 export interface AIModelConfig {
   id: string;
   protocol: ModelProtocol;
@@ -57,6 +59,7 @@ export interface ActionConfig {
     type: 'llm' | 'code';
     payload: string;
     modelId?: string; // 格式: "<供应商标识>/<模型名称>"
+    mode?: CallMode; // 仅 llm 模式下有效，明确指定调用方式
   };
   output: {
     connectionType: 'source_to_new' | 'new_to_source' | 'none';

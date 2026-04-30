@@ -5,7 +5,8 @@ import { Settings, Plus, Trash2, Pencil, X, HelpCircle } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { ActionConfig } from '@/types';
+import { ActionConfig, CallMode } from '@/types';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { v4 as uuidv4 } from 'uuid';
 import { PRESET_ACTION_COLORS, ACTION_DOT_CLASS } from '@/lib/utils';
 import { cn } from '@/lib/utils';
@@ -19,6 +20,20 @@ function getCapabilityLabels(model: { supportsText: boolean; supportsTextToImage
   if (model.supportsTextToImage) labels.push('文生图');
   if (model.supportsImageToImage) labels.push('图生图');
   return labels;
+}
+
+const MODE_OPTIONS: { value: CallMode; label: string }[] = [
+  { value: 'chat', label: '文生文' },
+  { value: 'generateImage', label: '文生图' },
+  { value: 'editImage', label: '图生图' },
+];
+
+function getSupportedModes(model: { supportsText: boolean; supportsTextToImage: boolean; supportsImageToImage: boolean }): CallMode[] {
+  const modes: CallMode[] = [];
+  if (model.supportsText) modes.push('chat');
+  if (model.supportsTextToImage) modes.push('generateImage');
+  if (model.supportsImageToImage) modes.push('editImage');
+  return modes;
 }
 
 export function ActionConfigPanel() {
@@ -39,6 +54,25 @@ export function ActionConfigPanel() {
     if (!m) return "未知模型";
     const caps = getCapabilityLabels(m).join(', ');
     return `${p.name} - ${m.model} (${caps})`;
+  };
+
+  const handleModelChange = (modelId: string) => {
+    const newProcessor = { ...editingAction!.processor, modelId: modelId || undefined };
+    if (modelId && editingAction!.processor.mode) {
+      const parts = modelId.split('/');
+      if (parts.length === 2) {
+        const [pKey, mName] = parts;
+        const p = providers?.find(prov => prov.key === pKey);
+        const m = p?.models.find(mod => mod.model === mName);
+        if (m) {
+          const supported = getSupportedModes(m);
+          if (!supported.includes(editingAction!.processor.mode!)) {
+            newProcessor.mode = supported[0];
+          }
+        }
+      }
+    }
+    setEditingAction({ ...editingAction!, processor: newProcessor });
   };
 
   const handleAddNew = () => {
@@ -238,7 +272,7 @@ export function ActionConfigPanel() {
                         type: newType, 
                         payload: newType === 'llm' 
                           ? '提示词模板使用 {{selected_content}}'
-                          : '// 可用变量: nodes, ai\n// `nodes` 是选中的 IdeaNode 对象数组\n// `ai` 是一个异步函数: await ai("提示词文本", "可选的模型ID") 返回 {content: string} 数组\n\n// 示例:\n// const text = nodes.map(n => n.data.content).join("\\n");\n// const results = await ai(`总结以下内容: \\n${text}`);\n// return results;\n\nreturn await ai(`分析这些想法: \\n${nodes.map(n => n.data.content).join("\\n")}`);'
+                          : '// 可用变量: nodes, ai\n// `nodes` 是选中的 IdeaNode 对象数组\n// `ai` 是一个异步函数: await ai("提示词文本", "模型ID", "调用方式")\n// 调用方式可选: "chat" | "generateImage" | "editImage"\n\n// 示例:\n// const text = nodes.map(n => n.data.content).join("\\n");\n// const results = await ai(`总结这些内容: \\n${text}`, "openai/gpt-4o");\n// return results;\n\nreturn await ai(`分析这些想法: \\n${nodes.map(n => n.data.content).join("\\n")}`);'
                       }
                     });
                   }}
@@ -249,27 +283,73 @@ export function ActionConfigPanel() {
               </div>
 
               {editingAction.processor.type === 'llm' && (
-                <div className="flex flex-col gap-2 w-full max-w-full">
-                  <Label>AI 模型</Label>
-                  <select 
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                    value={editingAction.processor.modelId || ''}
-                    onChange={e => setEditingAction({ 
-                      ...editingAction, 
-                      processor: { ...editingAction.processor, modelId: e.target.value || undefined }
-                    })}
-                  >
-                    <option value="">未配置模型</option>
-                    {providers.map(p => (
-                      <optgroup key={p.id} label={`${p.name} (${p.key})`}>
-                        {p.models.map(m => (
-                          <option key={m.id} value={`${p.key}/${m.model}`}>
-                            {m.model} [{getCapabilityLabels(m).join(', ')}]
-                          </option>
-                        ))}
-                      </optgroup>
-                    ))}
-                  </select>
+                <div className="flex flex-col gap-4 w-full max-w-full">
+                  <div className="flex flex-col gap-2">
+                    <Label>AI 模型</Label>
+                    <select 
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                      value={editingAction.processor.modelId || ''}
+                      onChange={e => handleModelChange(e.target.value)}
+                    >
+                      <option value="">未配置模型</option>
+                      {providers.map(p => (
+                        <optgroup key={p.id} label={`${p.name} (${p.key})`}>
+                          {p.models.map(m => (
+                            <option key={m.id} value={`${p.key}/${m.model}`}>
+                              {m.model} [{getCapabilityLabels(m).join(', ')}]
+                            </option>
+                          ))}
+                        </optgroup>
+                      ))}
+                    </select>
+                  </div>
+
+                  {editingAction.processor.modelId && (() => {
+                    const parts = editingAction.processor.modelId.split('/');
+                    if (parts.length !== 2) return null;
+                    const [pKey, mName] = parts;
+                    const p = providers?.find(prov => prov.key === pKey);
+                    const m = p?.models.find(mod => mod.model === mName);
+                    if (!m) return null;
+                    const supported = getSupportedModes(m);
+                    if (supported.length <= 1) return null;
+                    return (
+                      <div className="flex flex-col gap-2">
+                        <Label>调用方式</Label>
+                        <RadioGroup
+                          value={editingAction.processor.mode || supported[0]}
+                          onValueChange={(value) => setEditingAction({
+                            ...editingAction,
+                            processor: { ...editingAction.processor, mode: value as CallMode }
+                          })}
+                          className="grid grid-cols-3 gap-2"
+                        >
+                          {MODE_OPTIONS.map((opt) => {
+                            const isSupported = supported.includes(opt.value);
+                            return (
+                              <label
+                                key={opt.value}
+                                className={`flex items-center gap-2 rounded-lg border px-3 py-2.5 text-sm cursor-pointer transition-all ${
+                                  isSupported
+                                    ? 'border-input bg-background hover:bg-muted/50 has-[[data-checked]]:border-primary has-[[data-checked]]:bg-primary/5 has-[[data-checked]]:ring-1 has-[[data-checked]]:ring-primary/20'
+                                    : 'border-transparent opacity-50 cursor-not-allowed bg-muted/30'
+                                }`}
+                              >
+                                <RadioGroupItem
+                                  value={opt.value}
+                                  disabled={!isSupported}
+                                  className="shrink-0"
+                                />
+                                <span className={isSupported ? 'text-foreground' : 'text-muted-foreground'}>
+                                  {opt.label}
+                                </span>
+                              </label>
+                            );
+                          })}
+                        </RadioGroup>
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
 
@@ -366,8 +446,12 @@ export function ActionConfigPanel() {
 {`// 调用模型必须指定模型 ID，格式为 "<供应商标识>/<模型名称>"
 const results = await ai("将以下内容翻译成英文: \\n" + nodes[0].data.content, "openai/gpt-4o");
 
-// 指定图片模型
+// 指定图片模型（自动推断或显式指定 mode）
 const imgResults = await ai("画一只可爱的猫咪", "openai/gpt-image-2");
+const imgResults2 = await ai("画一只可爱的猫咪", "openai/gpt-image-2", "generateImage");
+
+// 图生图（传入 mode 为 "editImage"，系统会自动提取选中节点中的图片）
+const editResults = await ai("把这只猫变成水彩风格", "openai/gpt-image-2", "editImage");
 
 // 返回值格式
 // [
