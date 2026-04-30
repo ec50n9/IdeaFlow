@@ -20,45 +20,25 @@ function openDB(): Promise<IDBDatabase> {
 
 export async function saveImage(dataUrl: string): Promise<string> {
   const id = uuidv4();
-  console.log('[imageDB] saveImage start', id, 'length=', dataUrl.length);
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, 'readwrite');
     const store = tx.objectStore(STORE_NAME);
     const request = store.put({ id, dataUrl, createdAt: Date.now() });
-    request.onerror = () => {
-      console.error('[imageDB] saveImage request error', id, request.error);
-      reject(request.error);
-    };
-    tx.oncomplete = () => {
-      console.log('[imageDB] saveImage committed', id);
-      db.close();
-      resolve(id);
-    };
-    tx.onerror = () => {
-      console.error('[imageDB] saveImage transaction error', id, tx.error);
-      db.close();
-      reject(tx.error);
-    };
+    request.onerror = () => reject(request.error);
+    tx.oncomplete = () => { db.close(); resolve(id); };
+    tx.onerror = () => { db.close(); reject(tx.error); };
   });
 }
 
 export async function getImage(id: string): Promise<string | undefined> {
-  console.log('[imageDB] getImage', id);
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, 'readonly');
     const store = tx.objectStore(STORE_NAME);
     const request = store.get(id);
-    request.onsuccess = () => {
-      const result = request.result;
-      console.log('[imageDB] getImage result', id, result ? 'found' : 'NOT FOUND', 'dataUrl length=', result?.dataUrl?.length);
-      resolve(result?.dataUrl);
-    };
-    request.onerror = () => {
-      console.error('[imageDB] getImage error', id, request.error);
-      reject(request.error);
-    };
+    request.onsuccess = () => resolve(request.result?.dataUrl);
+    request.onerror = () => reject(request.error);
     tx.oncomplete = () => db.close();
   });
 }

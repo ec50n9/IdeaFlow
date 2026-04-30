@@ -12,11 +12,9 @@ function MarkdownImage({ src, alt }: { src?: string; alt?: string }) {
   const [resolvedSrc, setResolvedSrc] = useState(src);
 
   useEffect(() => {
-    console.log('[MarkdownImage] useEffect src=', src);
     let cancelled = false;
     if (src && src.startsWith('idb://')) {
       resolveImageUrl(src).then((url) => {
-        console.log('[MarkdownImage] resolved url=', url ? `found (length=${url.length})` : 'EMPTY');
         if (!cancelled) setResolvedSrc(url || '');
       });
     } else {
@@ -26,7 +24,6 @@ function MarkdownImage({ src, alt }: { src?: string; alt?: string }) {
   }, [src]);
 
   if (!resolvedSrc) {
-    console.log('[MarkdownImage] rendering fallback, resolvedSrc is empty');
     return <span className="text-muted-foreground italic text-xs">[图片加载失败]</span>;
   }
 
@@ -71,7 +68,7 @@ export const IdeaNodeComponent = memo(({ id, data, selected }: NodeProps<IdeaNod
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const renderedMarkdown = useMemo(() => (
-    <Markdown components={{ img: MarkdownImage as any }}>{data.content}</Markdown>
+    <Markdown urlTransform={(value) => value} components={{ img: MarkdownImage as any }}>{data.content}</Markdown>
   ), [data.content]);
 
   useEffect(() => {

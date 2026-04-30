@@ -8,9 +8,7 @@ const IDB_REF_REGEX = /^idb:\/\/(.+)$/;
  */
 export async function extractAndStoreImages(content: string): Promise<string> {
   const matches = Array.from(content.matchAll(BASE64_IMG_REGEX));
-  console.log('[imageUtils] extractAndStoreImages matches=', matches.length, 'content preview=', content.substring(0, 120));
   if (matches.length === 0) {
-    console.log('[imageUtils] no base64 images found, returning as-is');
     return content;
   }
 
@@ -18,12 +16,9 @@ export async function extractAndStoreImages(content: string): Promise<string> {
   for (const match of matches) {
     const alt = match[1];
     const dataUrl = match[2];
-    console.log('[imageUtils] storing image alt=', alt, 'dataUrl length=', dataUrl.length);
     const id = await saveImage(dataUrl);
-    console.log('[imageUtils] replacing with idb://', id);
     result = result.replace(match[0], `![${alt}](idb://${id})`);
   }
-  console.log('[imageUtils] result preview=', result.substring(0, 120));
   return result;
 }
 
