@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, createJSONStorage, type StateStorage } from 'zustand/middleware';
 import {
   Connection,
   Edge,
@@ -180,11 +180,30 @@ export const useStore = create<AppState>()(
     }),
     {
       name: 'mindflow-storage',
+      storage: createJSONStorage(() => ({
+        getItem: (name) => localStorage.getItem(name) ?? null,
+        setItem: (name, value) => {
+          try {
+            localStorage.setItem(name, value);
+          } catch (e) {
+            console.warn('Persist failed: localStorage quota exceeded', e);
+          }
+        },
+        removeItem: (name) => localStorage.removeItem(name),
+      } as StateStorage)),
       partialize: (state) => ({
         actions: state.actions,
         nodes: state.nodes.map((node) => ({
           ...node,
-          data: { ...node.data, runningActions: [] },
+          data: {
+            ...node.data,
+            runningActions: [],
+            // 兜底：若 content 中仍意外含有 base64，持久化前替换为占位符
+            content: node.data.content.replace(
+              /data:image\/[^;]+;base64,[\sA-Za-z0-9+/=]+/g,
+              '[图片]'
+            ),
+          },
         })),
         edges: state.edges,
         providers: state.providers,

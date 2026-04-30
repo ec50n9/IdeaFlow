@@ -4,6 +4,7 @@ import { useStore } from '@/store/useStore';
 import { Node, Edge } from '@xyflow/react';
 import { buildLayout, releaseDirections, computeNodeGroup, computeNewNodePositions } from '@/lib/layout';
 import { getAdapter, type OnChunk, TEXT_INSTRUCTION } from '@/lib/adapters';
+import { extractAndStoreImages, extractImageUrls } from '@/lib/imageUtils';
 
 const taskRegistry = new Map<string, {
   abortController: AbortController;
@@ -79,20 +80,40 @@ function resolveModel(modelRef?: string): { providerConfig: AIProviderConfig; mo
 // 图片提取
 // ─────────────────────────────────────────────────────────────
 
-function extractImagesFromNodes(nodes: IdeaNode[]): string[] {
+async function extractImagesFromNodes(nodes: IdeaNode[]): Promise<string[]> {
   const images: string[] = [];
   for (const node of nodes) {
-    const content = node.data.content;
-    // Markdown 图片: ![alt](url)
-    const mdMatches = content.match(/!\[.*?\]\((https?:\/\/[^)]+)\)/g);
-    if (mdMatches) {
-      images.push(...mdMatches.map((m) => m.match(/\((https?:\/\/[^)]+)\)/)![1]));
-    }
-    // Base64 data URL（支持含换行符的 base64）
-    const b64Matches = content.match(/data:image\/[^;]+;base64,[\sA-Za-z0-9+/=]+/g);
-    if (b64Matches) images.push(...b64Matches);
+    const nodeImages = await extractImageUrls(node.data.content);
+    images.push(...nodeImages);
   }
   return images;
+}
+
+async function processResultImages(results: any): Promise<any> {
+  if (Array.isArray(results)) {
+    for (const item of results) {
+      if (item && typeof item.content === 'string') {
+        item.content = await extractAndStoreImages(item.content);
+      }
+    }
+  } else if (typeof results === 'string') {
+    results = await extractAndStoreImages(results);
+  } else if (results && typeof results === 'object') {
+    if (results.content && typeof results.content === 'string') {
+      results.content = await extractAndStoreImages(results.content);
+    }
+    if (results.nodes && Array.isArray(results.nodes)) {
+      for (const node of results.nodes) {
+        const content = node.content || node.data?.content;
+        if (typeof content === 'string') {
+          const processed = await extractAndStoreImages(content);
+          if (node.content) node.content = processed;
+          if (node.data) node.data.content = processed;
+        }
+      }
+    }
+  }
+  return results;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -373,7 +394,7 @@ export async function processAction(action: ActionConfig, selectedNodes: IdeaNod
         basePrompt = basePrompt.replace(new RegExp(`\\\{\{node_${index}\}\}`, 'g'), node.data.content);
       });
 
-      const images = extractImagesFromNodes(selectedNodes);
+      const images = await extractImagesFromNodes(selectedNodes);
 
       let mode: CallMode | undefined = action.processor.mode;
       if (!mode && action.processor.modelId) {
@@ -413,6 +434,11 @@ export async function processAction(action: ActionConfig, selectedNodes: IdeaNod
         console.error('Failed to execute code logic', e);
         results = [{ content: 'Error executing custom code: ' + (e instanceof Error ? e.message : String(e)) }];
       }
+    }
+
+    // 将 results 中的 base64 图片存入 IndexedDB，替换为引用
+    if (results) {
+      results = await processResultImages(results);
     }
 
     // Process the results based on structure
