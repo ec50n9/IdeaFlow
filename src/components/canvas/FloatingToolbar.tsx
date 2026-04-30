@@ -2,9 +2,11 @@ import { memo, useMemo, useState } from 'react';
 import { useStore } from '@/store/useStore';
 import { NodeToolbar, Position } from '@xyflow/react';
 import { Button } from '@/components/ui/button';
+import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { cn, getActionColorClasses } from '@/lib/utils';
 import { processAction } from '@/lib/engine';
 import { OneOffActionDialog } from '@/components/OneOffActionDialog';
+import { ChevronDown } from 'lucide-react';
 
 export const FloatingToolbar = memo(() => {
   const { actions, nodes } = useStore();
@@ -13,6 +15,7 @@ export const FloatingToolbar = memo(() => {
   const selectedCount = selectedNodes.length;
 
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [overflowOpen, setOverflowOpen] = useState(false);
 
   const availableActions = useMemo(() => {
     return actions.filter((action) => {
@@ -38,7 +41,7 @@ export const FloatingToolbar = memo(() => {
       offset={15}
     >
       <div className="flex items-center justify-center p-1.5 bg-background/95 backdrop-blur-md border border-border shadow-md rounded-xl gap-1.5">
-        {availableActions.map((action) => (
+        {availableActions.slice(0, 3).map((action) => (
           <Button
             key={action.id}
             size="sm"
@@ -51,6 +54,42 @@ export const FloatingToolbar = memo(() => {
             {action.name}
           </Button>
         ))}
+
+        {availableActions.length > 3 && (
+          <Popover open={overflowOpen} onOpenChange={setOverflowOpen}>
+            <PopoverTrigger
+              render={
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="rounded-full flex items-center gap-1 font-medium shadow-sm hover:shadow-md transition-all text-xs px-3 py-1 h-auto"
+                >
+                  更多 <ChevronDown className="w-3 h-3" />
+                </Button>
+              }
+            />
+            <PopoverContent className="w-auto min-w-[160px] p-1.5 gap-1" align="start" side="bottom" sideOffset={8}>
+              {availableActions.slice(3).map((action) => (
+                <Button
+                  key={action.id}
+                  size="sm"
+                  variant="ghost"
+                  className={cn(
+                    "w-full justify-start rounded-lg text-xs h-auto py-1.5 px-2.5",
+                    getActionColorClasses(action.color)
+                  )}
+                  onClick={() => {
+                    processAction(action, selectedNodes);
+                    setOverflowOpen(false);
+                  }}
+                >
+                  {action.name}
+                </Button>
+              ))}
+            </PopoverContent>
+          </Popover>
+        )}
+
         <div className="w-px h-4 bg-border mx-1" />
         <Button
           size="sm"
