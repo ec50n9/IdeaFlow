@@ -171,6 +171,11 @@ export const IdeaNodeComponent = memo(({ id, data, selected }: NodeProps<IdeaNod
               )}
             >
               <span>{ra.actionName}</span>
+              {ra.responseLength !== undefined && (
+                <span className="opacity-70 ml-0.5 border-l pl-1 border-current tabular-nums">
+                  {ra.responseLength} 字
+                </span>
+              )}
               <button
                 onClick={(e) => {
                   e.stopPropagation();

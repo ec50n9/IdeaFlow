@@ -45,7 +45,60 @@ function clearTask(taskId: string) {
   taskRegistry.delete(taskId);
 }
 
-async function callAI(prompt: string, modelId?: string, signal?: AbortSignal) {
+// ─────────────────────────────────────────────────────────────
+// SSE 流式解析辅助函数
+// ─────────────────────────────────────────────────────────────
+
+async function parseSSEResponse(
+  response: Response,
+  onChunk: (chunk: string, accumulated: string) => void,
+  extractChunk: (parsed: any) => string,
+  signal?: AbortSignal
+): Promise<string> {
+  if (!response.body) throw new Error('No response body');
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let accumulated = '';
+
+  try {
+    while (true) {
+      if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      const chunks = buffer.split('\n\n');
+      buffer = chunks.pop() || '';
+
+      for (const chunk of chunks) {
+        const lines = chunk.split('\n');
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6).trim();
+            if (data === '[DONE]') continue;
+            try {
+              const parsed = JSON.parse(data);
+              const text = extractChunk(parsed);
+              if (text) {
+                accumulated += text;
+                onChunk(text, accumulated);
+              }
+            } catch {
+              // ignore malformed JSON in stream
+            }
+          }
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  return accumulated;
+}
+
+async function callAI(prompt: string, modelId?: string, signal?: AbortSignal, onChunk?: (chunk: string, accumulated: string) => void) {
   if (!modelId) {
     throw new Error('此动作未配置 AI 模型，请在动作配置中心选择模型。');
   }
@@ -85,24 +138,50 @@ async function callAI(prompt: string, modelId?: string, signal?: AbortSignal) {
       throw new Error("Gemini SDK wrapper currently only configured for text models here. Please use custom endpoint or text.");
     }
 
-    const response = await googleAi.models.generateContent({
-      model: modelName,
-      contents: prompt + textInstruction.replace(/\n/g, '\n'),
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              content: {
-                type: Type.STRING,
-              }
-            },
-            required: ["content"],
-          }
+    const contents = prompt + textInstruction.replace(/\n/g, '\n');
+    const config = {
+      responseMimeType: "application/json" as const,
+      responseSchema: {
+        type: Type.ARRAY,
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            content: {
+              type: Type.STRING,
+            }
+          },
+          required: ["content"],
         }
       }
+    };
+
+    if (onChunk) {
+      const stream = await googleAi.models.generateContentStream({
+        model: modelName,
+        contents,
+        config,
+      });
+
+      let accumulated = '';
+      for await (const chunk of stream) {
+        if (signal?.aborted) {
+          throw new DOMException('Aborted', 'AbortError');
+        }
+        const text = chunk.text || '';
+        if (text) {
+          accumulated += text;
+          onChunk(text, accumulated);
+        }
+      }
+
+      accumulated = accumulated.replace(/^```json\s*/, '').replace(/\s*```$/, '').trim();
+      return JSON.parse(accumulated);
+    }
+
+    const response = await googleAi.models.generateContent({
+      model: modelName,
+      contents,
+      config,
     });
 
     if (signal?.aborted) {
@@ -143,6 +222,34 @@ async function callAI(prompt: string, modelId?: string, signal?: AbortSignal) {
       };
     }
 
+    if (onChunk && type === 'text') {
+      const streamBody = { ...body, stream: true };
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${providerConfig.apiKey}`
+        },
+        body: JSON.stringify(streamBody),
+        signal,
+      });
+
+      if (!response.ok) {
+        throw new Error(`AI request failed: ${response.statusText} ${await response.text()}`);
+      }
+
+      const accumulated = await parseSSEResponse(
+        response,
+        onChunk,
+        (parsed) => parsed.choices?.[0]?.delta?.content || '',
+        signal
+      );
+
+      let text = accumulated || "[]";
+      text = text.replace(/^```json\s*/, '').replace(/\s*```$/, '').trim();
+      return JSON.parse(text);
+    }
+
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
@@ -173,6 +280,43 @@ async function callAI(prompt: string, modelId?: string, signal?: AbortSignal) {
 
   // Anthropic
   if (providerConfig.provider === 'anthropic') {
+    const requestBody = {
+      model: modelConfig.model,
+      max_tokens: 4096,
+      messages: [
+        { role: 'user', content: prompt + textInstruction.replace(/\n/g, '\n') }
+      ]
+    };
+
+    if (onChunk) {
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': providerConfig.apiKey,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerously-allow-browser': 'true'
+        },
+        body: JSON.stringify({ ...requestBody, stream: true }),
+        signal,
+      });
+      
+      if (!response.ok) {
+        throw new Error(`AI request failed: ${response.statusText} ${await response.text()}`);
+      }
+
+      const accumulated = await parseSSEResponse(
+        response,
+        onChunk,
+        (parsed) => parsed.delta?.text || '',
+        signal
+      );
+
+      let text = accumulated || "[]";
+      text = text.replace(/^```json\s*/, '').replace(/\s*```$/, '').trim();
+      return JSON.parse(text);
+    }
+
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -181,13 +325,7 @@ async function callAI(prompt: string, modelId?: string, signal?: AbortSignal) {
         'anthropic-version': '2023-06-01',
         'anthropic-dangerously-allow-browser': 'true'
       },
-      body: JSON.stringify({
-        model: modelConfig.model,
-        max_tokens: 4096,
-        messages: [
-          { role: 'user', content: prompt + textInstruction.replace(/\n/g, '\n') }
-        ]
-      }),
+      body: JSON.stringify(requestBody),
       signal,
     });
     
@@ -210,7 +348,7 @@ import ActionWorker from './actionWorker?worker';
 export async function executeWorkerCode(
   code: string,
   nodes: IdeaNode[],
-  options?: { signal?: AbortSignal; onWorker?: (worker: Worker) => void }
+  options?: { signal?: AbortSignal; onWorker?: (worker: Worker) => void; taskId?: string }
 ): Promise<any> {
   return new Promise((resolve, reject) => {
     const worker = new ActionWorker();
@@ -237,7 +375,32 @@ export async function executeWorkerCode(
       const data = e.data;
       if (data.type === 'CALL_AI') {
         try {
-          const result = await callAI(data.prompt, data.modelId, options?.signal);
+          const onChunk = options?.taskId
+            ? (_chunk: string, accumulated: string) => {
+                const store = useStore.getState();
+                const task = taskRegistry.get(options.taskId!);
+                if (!task) return;
+                store.setNodes(
+                  store.nodes.map((node) => {
+                    if (task.nodeIds.includes(node.id)) {
+                      return {
+                        ...node,
+                        data: {
+                          ...node.data,
+                          runningActions: (node.data.runningActions || []).map((ra) =>
+                            ra.taskId === options.taskId
+                              ? { ...ra, responseLength: accumulated.length }
+                              : ra
+                          ),
+                        },
+                      };
+                    }
+                    return node;
+                  })
+                );
+              }
+            : undefined;
+          const result = await callAI(data.prompt, data.modelId, options?.signal, onChunk);
           worker.postMessage({ type: 'AI_RESULT', callId: data.callId, result });
         } catch (err: any) {
           worker.postMessage({ type: 'AI_RESULT', callId: data.callId, error: err.message });
@@ -320,6 +483,26 @@ export async function processAction(action: ActionConfig, selectedNodes: IdeaNod
     })
   );
 
+  const createOnChunk = (tid: string) => (_chunk: string, accumulated: string) => {
+    const store = useStore.getState();
+    store.setNodes(
+      store.nodes.map((node) => {
+        if (selectedNodes.find((s) => s.id === node.id)) {
+          return {
+            ...node,
+            data: {
+              ...node.data,
+              runningActions: (node.data.runningActions || []).map((ra) =>
+                ra.taskId === tid ? { ...ra, responseLength: accumulated.length } : ra
+              ),
+            },
+          };
+        }
+        return node;
+      })
+    );
+  };
+
   try {
     const combinedContent = selectedNodes.map(n => n.data.content).join('\n\n---\n\n');
     let results: any = null;
@@ -345,7 +528,7 @@ export async function processAction(action: ActionConfig, selectedNodes: IdeaNod
       });
 
       try {
-        results = await callAI(basePrompt, action.processor.modelId, abortController.signal);
+        results = await callAI(basePrompt, action.processor.modelId, abortController.signal, createOnChunk(taskId));
       } catch (e) {
         if (e instanceof DOMException && e.name === 'AbortError') throw e;
         console.error("Failed to parse JSON response", e);
@@ -357,6 +540,7 @@ export async function processAction(action: ActionConfig, selectedNodes: IdeaNod
       try {
         results = await executeWorkerCode(action.processor.payload, selectedNodes, {
           signal: abortController.signal,
+          taskId,
           onWorker: (w) => {
             const task = taskRegistry.get(taskId);
             if (task) task.worker = w;

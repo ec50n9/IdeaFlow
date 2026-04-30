@@ -5,6 +5,7 @@ export interface RunningAction {
   actionId: string;
   actionName: string;
   actionColor?: string;
+  responseLength?: number;
 }
 
 export interface IdeaNodeData extends Record<string, unknown> {
