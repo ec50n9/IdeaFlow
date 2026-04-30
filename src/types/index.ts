@@ -5,6 +5,11 @@ export interface IdeaNodeData extends Record<string, unknown> {
   status: 'idle' | 'processing' | 'error';
   metadata?: Record<string, any>;
   isEditing?: boolean;
+  sourceType?: 'manual' | 'ai';
+  sourceAction?: string;
+  sourceProvider?: string;
+  sourceModel?: string;
+  isEdited?: boolean;
 }
 
 export type IdeaNode = Node<IdeaNodeData>;

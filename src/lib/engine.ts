@@ -185,11 +185,11 @@ export async function executeWorkerCode(code: string, nodes: IdeaNode[]): Promis
 
 // Execute an Action
 export async function processAction(action: ActionConfig, selectedNodes: IdeaNode[]) {
-  const store = useStore.getState();
+  const initialStore = useStore.getState();
   
   // Set processing status on selected nodes
-  store.setNodes(
-    store.nodes.map(node => 
+  initialStore.setNodes(
+    initialStore.nodes.map(node => 
       selectedNodes.find(s => s.id === node.id) 
         ? { ...node, data: { ...node.data, status: 'processing' } } 
         : node
@@ -197,8 +197,9 @@ export async function processAction(action: ActionConfig, selectedNodes: IdeaNod
   );
 
   const revertLoading = () => {
-    store.setNodes(
-      store.nodes.map(node => 
+    const freshStore = useStore.getState();
+    freshStore.setNodes(
+      freshStore.nodes.map(node => 
         selectedNodes.find(s => s.id === node.id) 
           ? { ...node, data: { ...node.data, status: 'idle' } } 
           : node
@@ -209,8 +210,25 @@ export async function processAction(action: ActionConfig, selectedNodes: IdeaNod
   try {
     const combinedContent = selectedNodes.map(n => n.data.content).join('\n\n---\n\n');
     let results: any = null;
+    let providerName = '';
+    let modelName = '';
 
     if (action.processor.type === 'llm') {
+      const freshStore = useStore.getState();
+      if (action.processor.modelId) {
+        for (const p of freshStore.providers || []) {
+          const m = p.models.find((mod: any) => mod.id === action.processor.modelId);
+          if (m) {
+            providerName = p.name;
+            modelName = m.name;
+            break;
+          }
+        }
+      } else {
+        providerName = '系统默认';
+        modelName = 'Gemini 1.5 Flash';
+      }
+
       let basePrompt = action.processor.payload.replace(/\{\{selected_content\}\}/g, combinedContent);
       selectedNodes.forEach((node, index) => {
         basePrompt = basePrompt.replace(new RegExp(`\\{\\{node_${index}\\}\\}`, 'g'), node.data.content);
@@ -234,26 +252,33 @@ export async function processAction(action: ActionConfig, selectedNodes: IdeaNod
 
     // Process the results based on structure
     if (results) {
+      const sourceMeta = {
+        sourceType: action.processor.type === 'llm' || action.processor.type === 'code' ? 'ai' : 'manual',
+        sourceAction: action.name,
+        sourceProvider: providerName,
+        sourceModel: modelName,
+      };
+
       if (Array.isArray(results)) {
         if (results.length > 0) {
-          applyLayout(action, selectedNodes, results, store);
+          applyLayout(action, selectedNodes, results, sourceMeta);
         } else {
           revertLoading();
         }
       } else if (typeof results === 'object') {
         if (results.nodes || results.edges) {
           // Custom graph override mapping explicitly provided nodes and edges
-          applyCustomGraphConfig(selectedNodes, results, store);
+          applyCustomGraphConfig(selectedNodes, results, sourceMeta);
         } else if (results.content) {
           // Single object acting as a node payload
-          applyLayout(action, selectedNodes, [results], store);
+          applyLayout(action, selectedNodes, [results], sourceMeta);
         } else {
           // Fallback, treat it as empty or missing expected fields
-          applyLayout(action, selectedNodes, [results], store);
+          applyLayout(action, selectedNodes, [results], sourceMeta);
         }
       } else if (typeof results === 'string') {
         // Raw string
-        applyLayout(action, selectedNodes, [{ content: results }], store);
+        applyLayout(action, selectedNodes, [{ content: results }], sourceMeta);
       } else {
         revertLoading();
       }
@@ -262,8 +287,9 @@ export async function processAction(action: ActionConfig, selectedNodes: IdeaNod
     }
   } catch (error) {
     console.error("Error processing action:", error);
-    store.setNodes(
-      store.nodes.map(node => 
+    const freshStore = useStore.getState();
+    freshStore.setNodes(
+      freshStore.nodes.map(node => 
         selectedNodes.find(s => s.id === node.id) 
           ? { ...node, data: { ...node.data, status: 'error' } } 
           : node
@@ -272,7 +298,9 @@ export async function processAction(action: ActionConfig, selectedNodes: IdeaNod
   }
 }
 
-function applyCustomGraphConfig(sourceNodes: IdeaNode[], config: any, store: any) {
+function applyCustomGraphConfig(sourceNodes: IdeaNode[], config: any, sourceMeta: any) {
+  const store = useStore.getState();
+
   let minX = Infinity, maxX = -Infinity, maxY = -Infinity;
   sourceNodes.forEach((n) => {
     if (n.position.x < minX) minX = n.position.x;
@@ -299,6 +327,7 @@ function applyCustomGraphConfig(sourceNodes: IdeaNode[], config: any, store: any
       data: {
         content: n.content || n.data?.content || '',
         ...n.data,
+        ...sourceMeta,
         status: n.data?.status || n.status || 'idle',
       },
     };
@@ -322,7 +351,8 @@ function applyCustomGraphConfig(sourceNodes: IdeaNode[], config: any, store: any
 }
 
 // Function to calculate layout for new nodes using dagre
-function applyLayout(action: ActionConfig, sourceNodes: IdeaNode[], results: any[], store: any) {
+function applyLayout(action: ActionConfig, sourceNodes: IdeaNode[], results: any[], sourceMeta: any) {
+  const store = useStore.getState();
   const g = new dagre.graphlib.Graph();
   g.setGraph({ rankdir: 'TB', ranksep: 100, nodesep: 50 });
   g.setDefaultEdgeLabel(() => ({}));
@@ -349,7 +379,7 @@ function applyLayout(action: ActionConfig, sourceNodes: IdeaNode[], results: any
       type: res.type || 'ideaNode',
       ...res,
       position: res.position || { x: 0, y: 0 },
-      data: { content: res.content || res.data?.content || '', ...res.data, status: 'idle' },
+      data: { content: res.content || res.data?.content || '', ...res.data, ...sourceMeta, status: 'idle' },
     };
 
     // Connections

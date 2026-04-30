@@ -51,7 +51,8 @@ export const Canvas = () => {
           data: {
             content: '',
             status: 'idle',
-            isEditing: true // Start in edit mode
+            isEditing: true, // Start in edit mode
+            sourceType: 'manual'
           },
         });
       }

@@ -3,6 +3,7 @@ import { Handle, Position, NodeProps } from '@xyflow/react';
 import { IdeaNodeData, IdeaNode } from '@/types';
 import Markdown from 'react-markdown';
 import { cn } from '@/lib/utils';
+import { Sparkles, Edit3, User } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 
 export const IdeaNodeComponent = memo(({ id, data, selected }: NodeProps<IdeaNode>) => {
@@ -32,7 +33,11 @@ export const IdeaNodeComponent = memo(({ id, data, selected }: NodeProps<IdeaNod
   const handleBlur = () => {
     setIsEditing(false);
     if (content !== data.content) {
-      updateNodeData(id, { content });
+      const updates: Partial<IdeaNodeData> = { content };
+      if (data.sourceType === 'ai') {
+        updates.isEdited = true;
+      }
+      updateNodeData(id, updates);
     }
   };
 
@@ -79,7 +84,31 @@ export const IdeaNodeComponent = memo(({ id, data, selected }: NodeProps<IdeaNod
         </div>
       )}
 
-      {isEditing ? (
+      {/* Meta tags */}
+      <div className="absolute -top-3 left-3 flex gap-1 z-10 select-none">
+        {data.sourceType === 'ai' ? (
+          <div className="flex items-center gap-1 bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300 text-[10px] font-medium px-2 py-0.5 rounded-full shadow-sm border border-purple-200 dark:border-purple-800">
+            <Sparkles className="w-3 h-3" />
+            <span>{data.sourceModel ? `${data.sourceProvider} - ${data.sourceModel}` : 'AI 生成'}</span>
+            {data.sourceAction && <span className="opacity-70 ml-1 border-l pl-1 border-current">{data.sourceAction}</span>}
+          </div>
+        ) : data.sourceType === 'manual' ? (
+          <div className="flex items-center gap-1 bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300 text-[10px] font-medium px-2 py-0.5 rounded-full shadow-sm border border-blue-200 dark:border-blue-800">
+            <User className="w-3 h-3" />
+            <span>手动输入</span>
+          </div>
+        ) : null}
+
+        {data.isEdited && (
+          <div className="flex items-center gap-1 bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300 text-[10px] font-medium px-2 py-0.5 rounded-full shadow-sm border border-amber-200 dark:border-amber-800" title="该内容已被手动修改">
+            <Edit3 className="w-3 h-3 relative -top-px" />
+            <span>已编辑</span>
+          </div>
+        )}
+      </div>
+
+      <div className="mt-2">
+        {isEditing ? (
         <textarea
           ref={textareaRef}
           value={content}
@@ -99,6 +128,7 @@ export const IdeaNodeComponent = memo(({ id, data, selected }: NodeProps<IdeaNod
           )}
         </div>
       )}
+      </div>
     </div>
   );
 });
