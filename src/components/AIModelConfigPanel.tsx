@@ -10,7 +10,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 const PROTOCOL_LABELS: Record<ModelProtocol, string> = {
-  openai: 'OpenAI',
+  openai: 'OpenAI (Images API)',
+  'openai-responses': 'OpenAI (Responses API)',
   anthropic: 'Anthropic',
   gemini: 'Gemini',
   generic: '通用',
@@ -230,10 +231,9 @@ export function AIModelConfigPanel() {
                                   setEditingProvider({...editingProvider, models: newModels});
                                }}
                              >
-                               <option value="openai">OpenAI</option>
-                               <option value="anthropic">Anthropic</option>
-                               <option value="gemini">Gemini</option>
-                               <option value="generic">通用</option>
+                               {(Object.entries(PROTOCOL_LABELS) as [ModelProtocol, string][]).map(([key, label]) => (
+                                 <option key={key} value={key}>{label}</option>
+                               ))}
                              </select>
                            </div>
 

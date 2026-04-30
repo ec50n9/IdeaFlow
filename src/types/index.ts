@@ -24,7 +24,7 @@ export interface IdeaNodeData extends Record<string, unknown> {
 
 export type IdeaNode = Node<IdeaNodeData>;
 
-export type ModelProtocol = 'openai' | 'anthropic' | 'gemini' | 'generic';
+export type ModelProtocol = 'openai' | 'openai-responses' | 'anthropic' | 'gemini' | 'generic';
 
 export type CallMode = 'chat' | 'generateImage' | 'editImage';
 

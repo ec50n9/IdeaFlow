@@ -54,7 +54,7 @@ function normalizeJsonText(text: string): any {
   return JSON.parse(text);
 }
 
-export class OpenAIAdapter implements ModelAdapter {
+export class OpenAIImagesAdapter implements ModelAdapter {
   supportsStreaming = true;
 
   private resolveChatEndpoint(endpoint?: string): string {

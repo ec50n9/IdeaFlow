@@ -1,12 +1,14 @@
 import type { ModelProtocol } from '@/types';
 import type { ModelAdapter } from './types';
-import { OpenAIAdapter } from './openai';
+import { OpenAIImagesAdapter } from './openai';
+import { OpenAIResponsesAdapter } from './openai-responses';
 import { GeminiAdapter } from './gemini';
 import { AnthropicAdapter } from './anthropic';
 import { GenericAdapter } from './generic';
 
 const adapterMap: Record<ModelProtocol, () => ModelAdapter> = {
-  openai: () => new OpenAIAdapter(),
+  openai: () => new OpenAIImagesAdapter(),
+  'openai-responses': () => new OpenAIResponsesAdapter(),
   gemini: () => new GeminiAdapter(),
   anthropic: () => new AnthropicAdapter(),
   generic: () => new GenericAdapter(),
