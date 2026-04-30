@@ -1,4 +1,4 @@
-import { memo, useMemo, useState } from 'react';
+import { memo, useMemo, useState, useRef } from 'react';
 import { useStore } from '@/store/useStore';
 import { NodeToolbar, Position } from '@xyflow/react';
 import { Button } from '@/components/ui/button';
@@ -16,6 +16,16 @@ export const FloatingToolbar = memo(() => {
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [overflowOpen, setOverflowOpen] = useState(false);
+  const hoverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const openMenu = () => {
+    if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+    setOverflowOpen(true);
+  };
+
+  const closeMenu = () => {
+    hoverTimeoutRef.current = setTimeout(() => setOverflowOpen(false), 150);
+  };
 
   const availableActions = useMemo(() => {
     return actions.filter((action) => {
@@ -63,12 +73,21 @@ export const FloatingToolbar = memo(() => {
                   size="sm"
                   variant="outline"
                   className="rounded-full flex items-center gap-1 font-medium shadow-sm hover:shadow-md transition-all text-xs px-3 py-1 h-auto"
+                  onMouseEnter={openMenu}
+                  onMouseLeave={closeMenu}
                 >
                   更多 <ChevronDown className="w-3 h-3" />
                 </Button>
               }
             />
-            <PopoverContent className="w-auto min-w-[160px] p-1.5 gap-1" align="start" side="bottom" sideOffset={8}>
+            <PopoverContent
+              className="w-auto min-w-[160px] p-1.5 gap-1"
+              align="start"
+              side="bottom"
+              sideOffset={8}
+              onMouseEnter={openMenu}
+              onMouseLeave={closeMenu}
+            >
               {availableActions.slice(3).map((action) => (
                 <Button
                   key={action.id}
