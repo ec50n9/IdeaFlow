@@ -20,4 +20,5 @@ export function getAdapter(protocol: ModelProtocol): ModelAdapter {
   return factory();
 }
 
+export { TEXT_INSTRUCTION } from './types';
 export type { AdapterParams, AdapterResult, OnChunk, ModelAdapter } from './types';

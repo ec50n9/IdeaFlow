@@ -3,7 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { useStore } from '@/store/useStore';
 import { Node, Edge } from '@xyflow/react';
 import { buildLayout, releaseDirections, computeNodeGroup, computeNewNodePositions } from '@/lib/layout';
-import { getAdapter, type OnChunk } from '@/lib/adapters';
+import { getAdapter, type OnChunk, TEXT_INSTRUCTION } from '@/lib/adapters';
 
 const taskRegistry = new Map<string, {
   abortController: AbortController;
@@ -103,7 +103,7 @@ type CallMode = 'chat' | 'generateImage' | 'editImage';
 
 function inferMode(modelConfig: AIModelConfig, hasImages: boolean): CallMode {
   if (hasImages && modelConfig.supportsImageToImage) return 'editImage';
-  if (modelConfig.supportsTextToImage && !modelConfig.supportsText) return 'generateImage';
+  if (modelConfig.supportsTextToImage) return 'generateImage';
   return 'chat';
 }
 
@@ -167,10 +167,11 @@ export async function callAI(
 
   switch (mode) {
     case 'chat': {
+      const chatParams = { ...params, prompt: params.prompt + TEXT_INSTRUCTION };
       if (options?.onChunk && adapter.supportsStreaming) {
-        result = await adapter.chatStream(params, options.onChunk);
+        result = await adapter.chatStream(chatParams, options.onChunk);
       } else {
-        result = await adapter.chat(params);
+        result = await adapter.chat(chatParams);
       }
       break;
     }
