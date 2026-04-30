@@ -1,4 +1,5 @@
 import { memo, useState, useRef, useEffect, useMemo } from 'react';
+import { ActionSnapshotDialog } from '@/components/ActionSnapshotDialog';
 import { Handle, Position, NodeProps } from '@xyflow/react';
 import { IdeaNodeData, IdeaNode } from '@/types';
 import Markdown from 'react-markdown';
@@ -64,6 +65,7 @@ function areEqual(prev: NodeProps<IdeaNode>, next: NodeProps<IdeaNode>) {
 export const IdeaNodeComponent = memo(({ id, data, selected }: NodeProps<IdeaNode>) => {
   const [isEditing, setIsEditing] = useState(false);
   const [content, setContent] = useState(data.content);
+  const [snapshotOpen, setSnapshotOpen] = useState(false);
   const updateNodeData = useStore((state) => state.updateNodeData);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -174,7 +176,11 @@ export const IdeaNodeComponent = memo(({ id, data, selected }: NodeProps<IdeaNod
       {/* Meta tags */}
       <div className="absolute -top-3 left-3 flex gap-1 z-10 select-none">
         {data.sourceType === 'ai' ? (
-          <div className={cn("group flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full shadow-sm border overflow-hidden", getActionColorClasses(data.sourceColor))}>
+          <button
+            type="button"
+            onClick={() => setSnapshotOpen(true)}
+            className={cn("group flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full shadow-sm border overflow-hidden cursor-pointer", getActionColorClasses(data.sourceColor))}
+          >
             <Sparkles className="w-3 h-3 shrink-0" />
             <span className="shrink-0">{data.sourceAction || 'AI 生成'}</span>
             {data.sourceModel && (
@@ -184,7 +190,7 @@ export const IdeaNodeComponent = memo(({ id, data, selected }: NodeProps<IdeaNod
                 </span>
               </span>
             )}
-          </div>
+          </button>
         ) : data.sourceType === 'manual' ? (
           <div className="flex items-center gap-1 bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300 text-[10px] font-medium px-2 py-0.5 rounded-full shadow-sm border border-blue-200 dark:border-blue-800">
             <User className="w-3 h-3" />
@@ -252,6 +258,14 @@ export const IdeaNodeComponent = memo(({ id, data, selected }: NodeProps<IdeaNod
           ))}
         </div>
       )}
+      <ActionSnapshotDialog
+        open={snapshotOpen}
+        onOpenChange={setSnapshotOpen}
+        actionId={data.actionId}
+        actionSnapshot={data.actionSnapshot}
+        sourceAction={data.sourceAction}
+        sourceColor={data.sourceColor}
+      />
     </div>
   );
 });

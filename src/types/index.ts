@@ -20,6 +20,8 @@ export interface IdeaNodeData extends Record<string, unknown> {
   sourceModel?: string;
   sourceColor?: string;
   isEdited?: boolean;
+  actionId?: string;
+  actionSnapshot?: ActionConfig;
 }
 
 export type IdeaNode = Node<IdeaNodeData>;

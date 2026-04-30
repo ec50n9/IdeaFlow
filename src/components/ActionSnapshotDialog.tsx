@@ -1,0 +1,233 @@
+import { useState, useEffect } from 'react';
+import { useStore } from '@/store/useStore';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { ActionConfig } from '@/types';
+import { ActionProcessorForm } from '@/components/ActionProcessorForm';
+import { v4 as uuidv4 } from 'uuid';
+import { PRESET_ACTION_COLORS, ACTION_DOT_CLASS, cn, getActionColorClasses } from '@/lib/utils';
+import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { AlertCircle } from 'lucide-react';
+
+interface ActionSnapshotDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  actionId?: string;
+  actionSnapshot?: ActionConfig;
+  sourceAction?: string;
+  sourceColor?: string;
+}
+
+export function ActionSnapshotDialog({
+  open,
+  onOpenChange,
+  actionId,
+  actionSnapshot,
+  sourceAction,
+  sourceColor,
+}: ActionSnapshotDialogProps) {
+  const { actions, addAction } = useStore();
+  const [mode, setMode] = useState<'view' | 'convert'>('view');
+
+  // 转换模式下的编辑字段
+  const [name, setName] = useState('');
+  const [color, setColor] = useState('purple');
+  const [minNodes, setMinNodes] = useState(1);
+  const [maxNodes, setMaxNodes] = useState<number | null>(null);
+
+  // 可编辑的处理器配置（转换模式下允许修改）
+  const [editableProcessor, setEditableProcessor] = useState<ActionConfig['processor']>({
+    type: 'llm',
+    payload: '',
+  });
+  const [editableOutput, setEditableOutput] = useState<ActionConfig['output']>({
+    connectionType: 'source_to_new',
+  });
+
+  const foundAction = actions.find((a) => a.id === actionId);
+  const displayAction = foundAction || actionSnapshot;
+
+  // 每次打开时重置状态
+  useEffect(() => {
+    if (open) {
+      setMode('view');
+      if (displayAction) {
+        setName(displayAction.name);
+        setColor(displayAction.color || 'purple');
+        setMinNodes(displayAction.trigger.minNodes);
+        setMaxNodes(displayAction.trigger.maxNodes);
+        setEditableProcessor(displayAction.processor);
+        setEditableOutput(displayAction.output);
+      }
+    }
+  }, [open, displayAction?.id]);
+
+  const handleSaveAsAction = () => {
+    const newAction: ActionConfig = {
+      id: uuidv4(),
+      name,
+      color,
+      trigger: { minNodes, maxNodes },
+      processor: editableProcessor,
+      output: editableOutput,
+    };
+    addAction(newAction);
+    onOpenChange(false);
+  };
+
+  const canConvert = !foundAction && !!actionSnapshot;
+  const hasNothing = !foundAction && !actionSnapshot;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[600px] gap-6 w-[90vw] overflow-x-hidden max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>
+            {hasNothing
+              ? '动作信息'
+              : foundAction
+                ? displayAction?.name || '动作详情'
+                : mode === 'view'
+                  ? `${displayAction?.name || '次抛'} 快照`
+                  : '转换为动作'}
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="flex flex-col gap-5 py-4 overflow-x-hidden">
+          {hasNothing ? (
+            <div className="flex flex-col items-center gap-3 py-8 text-muted-foreground">
+              <AlertCircle className="w-10 h-10 opacity-40" />
+              <p className="text-sm">该节点由旧版本生成，未保存动作快照。</p>
+              {sourceAction && (
+                <div
+                  className={cn(
+                    'flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full shadow-sm border',
+                    getActionColorClasses(sourceColor)
+                  )}
+                >
+                  历史标记：{sourceAction}
+                </div>
+              )}
+            </div>
+          ) : (
+            <>
+              <ActionProcessorForm
+                processor={displayAction!.processor}
+                output={displayAction!.output}
+                onChange={(p, o) => {
+                  setEditableProcessor(p);
+                  setEditableOutput(o);
+                }}
+                disabled={mode === 'view'}
+              />
+
+              {mode === 'convert' && (
+                <>
+                  <div className="flex flex-col gap-2">
+                    <Label>动作名称</Label>
+                    <Input value={name} onChange={(e) => setName(e.target.value)} />
+                  </div>
+
+                  <div className="flex flex-col gap-2">
+                    <Label>标签颜色</Label>
+                    <Popover>
+                      <PopoverTrigger
+                        render={
+                          <button
+                            type="button"
+                            className="flex items-center gap-2.5 w-fit px-3 py-2 rounded-lg border border-input bg-background hover:bg-muted/50 transition-colors text-sm cursor-pointer"
+                          >
+                            <div
+                              className={cn(
+                                'w-4 h-4 rounded-full',
+                                ACTION_DOT_CLASS[color] || ACTION_DOT_CLASS['purple']
+                              )}
+                            />
+                            <span>
+                              {PRESET_ACTION_COLORS.find((c) => c.name === color)?.label ||
+                                PRESET_ACTION_COLORS[0].label}
+                            </span>
+                          </button>
+                        }
+                      />
+                      <PopoverContent className="w-72">
+                        <div className="grid grid-cols-4 gap-2">
+                          {PRESET_ACTION_COLORS.map((c) => (
+                            <button
+                              key={c.name}
+                              type="button"
+                              onClick={() => setColor(c.name)}
+                              className={cn(
+                                'flex flex-col items-center gap-1 p-2 rounded-lg border-2 transition-all',
+                                color === c.name
+                                  ? 'border-primary ring-1 ring-primary/20 bg-primary/5'
+                                  : 'border-transparent hover:border-muted hover:bg-muted/50'
+                              )}
+                            >
+                              <div className={cn('w-7 h-7 rounded-full', ACTION_DOT_CLASS[c.name])} />
+                              <span className="text-xs">{c.label}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="flex flex-col gap-2">
+                      <Label>最少选中节点数</Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        value={minNodes}
+                        onChange={(e) => setMinNodes(parseInt(e.target.value) || 1)}
+                      />
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <Label>最多选中节点数</Label>
+                      <Input
+                        type="number"
+                        placeholder="无限定"
+                        value={maxNodes === null ? '' : maxNodes}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setMaxNodes(val === '' ? null : parseInt(val));
+                        }}
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
+            </>
+          )}
+
+          <div className="flex justify-end gap-2 mt-4">
+            {hasNothing ? (
+              <Button variant="outline" onClick={() => onOpenChange(false)}>
+                关闭
+              </Button>
+            ) : mode === 'view' ? (
+              <>
+                <Button variant="outline" onClick={() => onOpenChange(false)}>
+                  关闭
+                </Button>
+                {canConvert && (
+                  <Button onClick={() => setMode('convert')}>转换为动作...</Button>
+                )}
+              </>
+            ) : (
+              <>
+                <Button variant="outline" onClick={() => setMode('view')}>
+                  返回
+                </Button>
+                <Button onClick={handleSaveAsAction}>确认保存</Button>
+              </>
+            )}
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}

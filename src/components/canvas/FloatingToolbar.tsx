@@ -1,15 +1,18 @@
-import { memo, useMemo } from 'react';
+import { memo, useMemo, useState } from 'react';
 import { useStore } from '@/store/useStore';
 import { NodeToolbar, Position } from '@xyflow/react';
 import { Button } from '@/components/ui/button';
 import { cn, getActionColorClasses } from '@/lib/utils';
 import { processAction } from '@/lib/engine';
+import { OneOffActionDialog } from '@/components/OneOffActionDialog';
 
 export const FloatingToolbar = memo(() => {
   const { actions, nodes } = useStore();
 
   const selectedNodes = nodes.filter((n) => n.selected);
   const selectedCount = selectedNodes.length;
+
+  const [dialogOpen, setDialogOpen] = useState(false);
 
   const availableActions = useMemo(() => {
     return actions.filter((action) => {
@@ -21,7 +24,7 @@ export const FloatingToolbar = memo(() => {
     });
   }, [actions, selectedCount]);
 
-  if (selectedCount === 0 || availableActions.length === 0) {
+  if (selectedCount === 0) {
     return null;
   }
 
@@ -48,7 +51,21 @@ export const FloatingToolbar = memo(() => {
             {action.name}
           </Button>
         ))}
+        <div className="w-px h-4 bg-border mx-1" />
+        <Button
+          size="sm"
+          variant="outline"
+          className="rounded-full flex items-center gap-1.5 font-medium shadow-sm hover:shadow-md transition-all text-xs px-3 py-1 h-auto"
+          onClick={() => setDialogOpen(true)}
+        >
+          次抛
+        </Button>
       </div>
+      <OneOffActionDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        selectedNodes={selectedNodes}
+      />
     </NodeToolbar>
   );
 });

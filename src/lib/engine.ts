@@ -456,6 +456,8 @@ export async function processAction(action: ActionConfig, selectedNodes: IdeaNod
         sourceProvider: providerName,
         sourceModel: modelName,
         sourceColor: action.color,
+        actionId: action.id,
+        actionSnapshot: action,
       };
 
       if (Array.isArray(results)) {
@@ -488,6 +490,27 @@ export async function processAction(action: ActionConfig, selectedNodes: IdeaNod
     clearTask(taskId);
     releaseDirections(taskId);
   }
+}
+
+// ─────────────────────────────────────────────────────────────
+// 次抛模式（One-Off Action）
+// ─────────────────────────────────────────────────────────────
+
+export async function processOneOff(
+  processor: ActionConfig['processor'],
+  output: ActionConfig['output'],
+  selectedNodes: IdeaNode[],
+  promptText: string
+) {
+  const tempAction: ActionConfig = {
+    id: 'one-off',
+    name: '次抛',
+    color: 'slate',
+    trigger: { minNodes: 1, maxNodes: null },
+    processor: { ...processor, payload: promptText },
+    output,
+  };
+  await processAction(tempAction, selectedNodes);
 }
 
 // ─────────────────────────────────────────────────────────────
