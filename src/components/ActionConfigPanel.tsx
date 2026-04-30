@@ -18,7 +18,7 @@ export function ActionConfigPanel() {
 
   // Helper to get model details
   const getModelLabel = (modelId?: string) => {
-    if (!modelId) return "系统默认模型 (Gemini 1.5 Flash)";
+    if (!modelId) return "未配置模型";
     for (const p of providers || []) {
       const m = p.models.find(mod => mod.id === modelId);
       if (m) {
@@ -199,7 +199,7 @@ export function ActionConfigPanel() {
                       processor: { ...editingAction.processor, modelId: e.target.value || undefined }
                     })}
                   >
-                    <option value="">系统默认模型 (Gemini 1.5 Flash)</option>
+                    <option value="">未配置模型</option>
                     {providers.map(p => (
                       <optgroup key={p.id} label={p.name}>
                         {p.models.map(m => (
@@ -299,7 +299,7 @@ export function ActionConfigPanel() {
               <h3 className="font-semibold text-base">入参方法: ai(prompt: string, modelId?: string)</h3>
               <p className="text-muted-foreground">调用大模型（处理核心逻辑），传入 prompt 和可选的模型 ID（可在模型配置中复制 ID），等待返回。</p>
               <pre className="bg-muted/50 p-4 rounded-lg overflow-auto border font-mono text-xs text-muted-foreground break-all whitespace-pre-wrap">
-{`// 默认模型
+{`// 调用模型（需在动作配置中选择模型，或传入模型ID）
 const results = await ai("将以下内容翻译成英文: \\n" + nodes[0].data.content);
 
 // 指定自定义模型 (使用在模型配置中心创建的 ID)
@@ -332,7 +332,7 @@ const imgResults = await ai("画一只可爱的猫咪", "your-model-id-here");
                     ))}
                   </ul>
                 ) : (
-                  <p className="mt-1 text-muted-foreground">暂无自定义配置，只支持系统默认模型。</p>
+                  <p className="mt-1 text-muted-foreground">暂无自定义配置。</p>
                 )}
               </div>
             </div>

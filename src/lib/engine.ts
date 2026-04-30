@@ -6,29 +6,35 @@ import { useStore } from '@/store/useStore';
 import { Node, Edge } from '@xyflow/react';
 
 async function callAI(prompt: string, modelId?: string) {
+  if (!modelId) {
+    throw new Error('此动作未配置 AI 模型，请在动作配置中心选择模型。');
+  }
+
   const store = useStore.getState();
   
   let providerConfig: AIProviderConfig | null = null;
   let modelConfig: AIModelConfig | null = null;
 
-  if (modelId) {
-    for (const p of store.providers || []) {
-      const m = p.models.find(mod => mod.id === modelId);
-      if (m) {
-        providerConfig = p;
-        modelConfig = m;
-        break;
-      }
+  for (const p of store.providers || []) {
+    const m = p.models.find(mod => mod.id === modelId);
+    if (m) {
+      providerConfig = p;
+      modelConfig = m;
+      break;
     }
   }
 
-  const type = modelConfig?.type || 'text';
+  if (!providerConfig || !modelConfig) {
+    throw new Error(`未找到 ID 为 "${modelId}" 的模型配置，请在模型配置中心检查配置。`);
+  }
+
+  const type = modelConfig.type || 'text';
 
   const textInstruction = '\n\n请务必只输出严格的 JSON 数组格式，例如 [{"content": "生成的内容1"}, {"content": "生成的内容2"}]。请根据任务要求决定输出的数组元素个数，如果任务没有明确要求拆分节点，则务必将所有内容整合到一个对象的 content 中，即数组中只有一个对象。不要输出任何额外的标记或解释文字。';
 
-  if (!providerConfig || !modelConfig || (providerConfig.provider === 'gemini' && (!providerConfig.apiKey && process.env.GEMINI_API_KEY))) {
-    const apiKey = providerConfig?.apiKey || process.env.GEMINI_API_KEY || "";
-    const modelName = modelConfig?.model || "gemini-2.5-flash";
+  if (providerConfig.provider === 'gemini') {
+    const apiKey = providerConfig.apiKey || process.env.GEMINI_API_KEY || "";
+    const modelName = modelConfig.model;
     const googleAi = new GoogleGenAI({ apiKey });
     
     if (type !== 'text') {
@@ -224,9 +230,6 @@ export async function processAction(action: ActionConfig, selectedNodes: IdeaNod
             break;
           }
         }
-      } else {
-        providerName = '系统默认';
-        modelName = 'Gemini 1.5 Flash';
       }
 
       let basePrompt = action.processor.payload.replace(/\{\{selected_content\}\}/g, combinedContent);
