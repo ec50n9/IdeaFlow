@@ -4,6 +4,7 @@ export interface RunningAction {
   taskId: string;
   actionId: string;
   actionName: string;
+  actionColor?: string;
 }
 
 export interface IdeaNodeData extends Record<string, unknown> {
@@ -16,6 +17,7 @@ export interface IdeaNodeData extends Record<string, unknown> {
   sourceAction?: string;
   sourceProvider?: string;
   sourceModel?: string;
+  sourceColor?: string;
   isEdited?: boolean;
 }
 
@@ -41,6 +43,7 @@ export interface ActionConfig {
   id: string;
   name: string;
   icon?: string;
+  color?: string;
   trigger: {
     minNodes: number;
     maxNodes: number | null; // null means infinite

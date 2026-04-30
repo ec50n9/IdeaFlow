@@ -44,6 +44,7 @@ const defaultActions: ActionConfig[] = [
   {
     id: 'expand-idea',
     name: '多维展开',
+    color: 'purple',
     trigger: { minNodes: 1, maxNodes: 1 },
     processor: {
       type: 'llm',
@@ -54,6 +55,7 @@ const defaultActions: ActionConfig[] = [
   {
     id: 'translate-en',
     name: '翻译为英文',
+    color: 'blue',
     trigger: { minNodes: 1, maxNodes: 1 },
     processor: {
       type: 'llm',
@@ -64,6 +66,7 @@ const defaultActions: ActionConfig[] = [
   {
     id: 'summarize',
     name: '总结归纳',
+    color: 'emerald',
     trigger: { minNodes: 2, maxNodes: null },
     processor: {
       type: 'llm',

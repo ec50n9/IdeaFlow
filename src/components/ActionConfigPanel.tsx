@@ -7,7 +7,10 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { ActionConfig } from '@/types';
 import { v4 as uuidv4 } from 'uuid';
+import { PRESET_ACTION_COLORS, ACTION_DOT_CLASS } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import Editor from '@monaco-editor/react';
 
 export function ActionConfigPanel() {
@@ -29,9 +32,13 @@ export function ActionConfigPanel() {
   };
 
   const handleAddNew = () => {
+    // 为新增动作分配一个未使用的颜色，若全部用完则默认 purple
+    const usedColors = new Set(actions.map(a => a.color).filter(Boolean));
+    const defaultColor = PRESET_ACTION_COLORS.find(c => !usedColors.has(c.name))?.name || 'purple';
     const newAction: ActionConfig = {
       id: uuidv4(),
       name: '新动作',
+      color: defaultColor,
       trigger: { minNodes: 1, maxNodes: 1 },
       processor: {
         type: 'llm',
@@ -75,7 +82,10 @@ export function ActionConfigPanel() {
               {actions.map((action) => (
                 <div key={action.id} className="border bg-card text-card-foreground rounded-2xl p-6 flex flex-col gap-4 shadow-sm hover:shadow-md transition-shadow">
                   <div className="flex items-center justify-between">
-                    <h3 className="font-semibold text-lg">{action.name}</h3>
+                    <div className="flex items-center gap-2.5">
+                      <div className={cn("w-3 h-3 rounded-full shrink-0", ACTION_DOT_CLASS[action.color || 'purple'])} />
+                      <h3 className="font-semibold text-lg">{action.name}</h3>
+                    </div>
                     <div className="flex items-center gap-1 shrink-0">
                       <Button variant="ghost" size="icon" onClick={() => setEditingAction(action)} className="h-8 w-8 text-muted-foreground hover:text-primary">
                         <Pencil className="w-4 h-4" />
@@ -132,6 +142,46 @@ export function ActionConfigPanel() {
                   value={editingAction.name} 
                   onChange={e => setEditingAction({ ...editingAction, name: e.target.value })}
                 />
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <Label>标签颜色</Label>
+                <Popover>
+                  <PopoverTrigger
+                    render={
+                      <button
+                        type="button"
+                        className="flex items-center gap-2.5 w-fit px-3 py-2 rounded-lg border border-input bg-background hover:bg-muted/50 transition-colors text-sm cursor-pointer"
+                      >
+                        <div className={cn("w-4 h-4 rounded-full", ACTION_DOT_CLASS[editingAction.color || 'purple'])} />
+                        <span>
+                          {PRESET_ACTION_COLORS.find(c => c.name === editingAction.color)?.label
+                            || PRESET_ACTION_COLORS[0].label}
+                        </span>
+                      </button>
+                    }
+                  />
+                  <PopoverContent className="w-72">
+                    <div className="grid grid-cols-4 gap-2">
+                      {PRESET_ACTION_COLORS.map((c) => (
+                        <button
+                          key={c.name}
+                          type="button"
+                          onClick={() => setEditingAction({ ...editingAction, color: c.name })}
+                          className={cn(
+                            "flex flex-col items-center gap-1 p-2 rounded-lg border-2 transition-all",
+                            editingAction.color === c.name
+                              ? "border-primary ring-1 ring-primary/20 bg-primary/5"
+                              : "border-transparent hover:border-muted hover:bg-muted/50"
+                          )}
+                        >
+                          <div className={cn("w-7 h-7 rounded-full", ACTION_DOT_CLASS[c.name])} />
+                          <span className="text-xs">{c.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </PopoverContent>
+                </Popover>
               </div>
               
               <div className="grid grid-cols-2 gap-4">
@@ -269,6 +319,8 @@ export function ActionConfigPanel() {
           )}
         </DialogContent>
       </Dialog>
+
+
       {/* Code Help Dialog */}
       <Dialog open={helpOpen} onOpenChange={setHelpOpen}>
         <DialogContent className="sm:max-w-[700px] gap-6 max-h-[85vh] overflow-y-auto">

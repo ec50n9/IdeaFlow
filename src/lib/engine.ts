@@ -303,7 +303,7 @@ export async function processAction(action: ActionConfig, selectedNodes: IdeaNod
   });
 
   const store = useStore.getState();
-  const runningAction = { taskId, actionId: action.id, actionName: action.name };
+  const runningAction = { taskId, actionId: action.id, actionName: action.name, actionColor: action.color };
 
   store.setNodes(
     store.nodes.map((node) => {
@@ -376,6 +376,7 @@ export async function processAction(action: ActionConfig, selectedNodes: IdeaNod
         sourceAction: action.name,
         sourceProvider: providerName,
         sourceModel: modelName,
+        sourceColor: action.color,
       };
 
       if (Array.isArray(results)) {

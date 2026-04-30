@@ -2,7 +2,7 @@ import { memo, useState, useRef, useEffect } from 'react';
 import { Handle, Position, NodeProps } from '@xyflow/react';
 import { IdeaNodeData, IdeaNode } from '@/types';
 import Markdown from 'react-markdown';
-import { cn } from '@/lib/utils';
+import { cn, getActionColorClasses } from '@/lib/utils';
 import { Sparkles, Edit3, User, X } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { cancelTask } from '@/lib/engine';
@@ -116,7 +116,7 @@ export const IdeaNodeComponent = memo(({ id, data, selected }: NodeProps<IdeaNod
       {/* Meta tags */}
       <div className="absolute -top-3 left-3 flex gap-1 z-10 select-none">
         {data.sourceType === 'ai' ? (
-          <div className="flex items-center gap-1 bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300 text-[10px] font-medium px-2 py-0.5 rounded-full shadow-sm border border-purple-200 dark:border-purple-800">
+          <div className={cn("flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full shadow-sm border", getActionColorClasses(data.sourceColor))}>
             <Sparkles className="w-3 h-3" />
             <span>{data.sourceModel ? `${data.sourceProvider} - ${data.sourceModel}` : 'AI 生成'}</span>
             {data.sourceAction && <span className="opacity-70 ml-1 border-l pl-1 border-current">{data.sourceAction}</span>}
@@ -165,7 +165,10 @@ export const IdeaNodeComponent = memo(({ id, data, selected }: NodeProps<IdeaNod
           {(data.runningActions || []).map((ra) => (
             <div
               key={ra.taskId}
-              className="inline-flex items-center gap-1 bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300 text-[10px] font-medium px-2 py-0.5 rounded-full shadow-sm border border-purple-200 dark:border-purple-800 animate-pulse"
+              className={cn(
+                "inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full shadow-sm border animate-pulse",
+                getActionColorClasses(ra.actionColor)
+              )}
             >
               <span>{ra.actionName}</span>
               <button
@@ -173,7 +176,7 @@ export const IdeaNodeComponent = memo(({ id, data, selected }: NodeProps<IdeaNod
                   e.stopPropagation();
                   cancelTask(ra.taskId);
                 }}
-                className="inline-flex items-center justify-center rounded-full hover:bg-purple-200 dark:hover:bg-purple-800 p-0.5 -mr-0.5 cursor-pointer"
+                className="inline-flex items-center justify-center rounded-full hover:bg-black/10 dark:hover:bg-white/10 p-0.5 -mr-0.5 cursor-pointer"
                 title="取消任务"
               >
                 <X className="w-3 h-3" />

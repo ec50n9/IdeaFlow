@@ -2,7 +2,7 @@ import { memo, useMemo } from 'react';
 import { useStore } from '@/store/useStore';
 import { NodeToolbar, Position } from '@xyflow/react';
 import { Button } from '@/components/ui/button';
-import { Play } from 'lucide-react';
+import { cn, getActionColorClasses } from '@/lib/utils';
 import { processAction } from '@/lib/engine';
 
 export const FloatingToolbar = memo(() => {
@@ -38,12 +38,13 @@ export const FloatingToolbar = memo(() => {
         {availableActions.map((action) => (
           <Button
             key={action.id}
-            variant="secondary"
             size="sm"
-            className="rounded-lg flex items-center gap-1.5 font-medium shadow-sm hover:shadow-md transition-all"
+            className={cn(
+              "rounded-full flex items-center gap-1.5 font-medium shadow-sm hover:shadow-md transition-all border text-xs px-3 py-1 h-auto",
+              getActionColorClasses(action.color)
+            )}
             onClick={() => processAction(action, selectedNodes)}
           >
-            <Play className="w-3.5 h-3.5 text-primary" />
             {action.name}
           </Button>
         ))}
