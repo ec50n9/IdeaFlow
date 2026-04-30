@@ -171,7 +171,15 @@ export const useStore = create<AppState>()(
     }),
     {
       name: 'mindflow-storage',
-      partialize: (state) => ({ actions: state.actions, nodes: state.nodes, edges: state.edges, providers: state.providers }),
+      partialize: (state) => ({
+        actions: state.actions,
+        nodes: state.nodes.map((node) => ({
+          ...node,
+          data: { ...node.data, runningActions: [] },
+        })),
+        edges: state.edges,
+        providers: state.providers,
+      }),
     }
   )
 );

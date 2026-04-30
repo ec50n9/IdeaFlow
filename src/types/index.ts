@@ -1,8 +1,15 @@
 import { Node, Edge } from '@xyflow/react';
 
+export interface RunningAction {
+  taskId: string;
+  actionId: string;
+  actionName: string;
+}
+
 export interface IdeaNodeData extends Record<string, unknown> {
   content: string;
   status: 'idle' | 'processing' | 'error';
+  runningActions?: RunningAction[];
   metadata?: Record<string, any>;
   isEditing?: boolean;
   sourceType?: 'manual' | 'ai';

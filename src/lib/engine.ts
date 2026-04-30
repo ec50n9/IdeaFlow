@@ -5,9 +5,53 @@ import { v4 as uuidv4 } from 'uuid';
 import { useStore } from '@/store/useStore';
 import { Node, Edge } from '@xyflow/react';
 
-async function callAI(prompt: string, modelId?: string) {
+const taskRegistry = new Map<string, {
+  abortController: AbortController;
+  worker?: Worker;
+  nodeIds: string[];
+}>();
+
+export function cancelTask(taskId: string) {
+  const task = taskRegistry.get(taskId);
+  if (task) {
+    task.abortController.abort();
+    if (task.worker) {
+      task.worker.terminate();
+    }
+  }
+  clearTask(taskId);
+}
+
+function clearTask(taskId: string) {
+  const task = taskRegistry.get(taskId);
+  if (!task) return;
+
+  const store = useStore.getState();
+  store.setNodes(
+    store.nodes.map((node) => {
+      if (task.nodeIds.includes(node.id)) {
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            runningActions: (node.data.runningActions || []).filter((ra) => ra.taskId !== taskId),
+          },
+        };
+      }
+      return node;
+    })
+  );
+
+  taskRegistry.delete(taskId);
+}
+
+async function callAI(prompt: string, modelId?: string, signal?: AbortSignal) {
   if (!modelId) {
     throw new Error('此动作未配置 AI 模型，请在动作配置中心选择模型。');
+  }
+
+  if (signal?.aborted) {
+    throw new DOMException('Aborted', 'AbortError');
   }
 
   const store = useStore.getState();
@@ -61,6 +105,10 @@ async function callAI(prompt: string, modelId?: string) {
       }
     });
 
+    if (signal?.aborted) {
+      throw new DOMException('Aborted', 'AbortError');
+    }
+
     let text = response.text || "[]";
     text = text.replace(/^```json\s*/, '').replace(/\s*```$/, '').trim();
     return JSON.parse(text);
@@ -101,7 +149,8 @@ async function callAI(prompt: string, modelId?: string) {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${providerConfig.apiKey}`
       },
-      body: JSON.stringify(body)
+      body: JSON.stringify(body),
+      signal,
     });
 
     if (!response.ok) {
@@ -138,7 +187,8 @@ async function callAI(prompt: string, modelId?: string) {
         messages: [
           { role: 'user', content: prompt + textInstruction.replace(/\n/g, '\n') }
         ]
-      })
+      }),
+      signal,
     });
     
     if (!response.ok) {
@@ -157,16 +207,37 @@ async function callAI(prompt: string, modelId?: string) {
 // Ensure the worker is imported with ?worker suffix for Vite
 import ActionWorker from './actionWorker?worker';
 
-export async function executeWorkerCode(code: string, nodes: IdeaNode[]): Promise<any> {
+export async function executeWorkerCode(
+  code: string,
+  nodes: IdeaNode[],
+  options?: { signal?: AbortSignal; onWorker?: (worker: Worker) => void }
+): Promise<any> {
   return new Promise((resolve, reject) => {
     const worker = new ActionWorker();
+
+    if (options?.onWorker) {
+      options.onWorker(worker);
+    }
+
+    if (options?.signal) {
+      const onAbort = () => {
+        worker.terminate();
+        reject(new DOMException('Aborted', 'AbortError'));
+      };
+      if (options.signal.aborted) {
+        onAbort();
+        return;
+      }
+      options.signal.addEventListener('abort', onAbort, { once: true });
+    }
+
     const messageId = Math.random().toString(36).substring(7);
 
     worker.onmessage = async (e) => {
       const data = e.data;
       if (data.type === 'CALL_AI') {
         try {
-          const result = await callAI(data.prompt, data.modelId);
+          const result = await callAI(data.prompt, data.modelId, options?.signal);
           worker.postMessage({ type: 'AI_RESULT', callId: data.callId, result });
         } catch (err: any) {
           worker.postMessage({ type: 'AI_RESULT', callId: data.callId, error: err.message });
@@ -191,27 +262,31 @@ export async function executeWorkerCode(code: string, nodes: IdeaNode[]): Promis
 
 // Execute an Action
 export async function processAction(action: ActionConfig, selectedNodes: IdeaNode[]) {
-  const initialStore = useStore.getState();
-  
-  // Set processing status on selected nodes
-  initialStore.setNodes(
-    initialStore.nodes.map(node => 
-      selectedNodes.find(s => s.id === node.id) 
-        ? { ...node, data: { ...node.data, status: 'processing' } } 
-        : node
-    )
-  );
+  const taskId = uuidv4();
+  const abortController = new AbortController();
 
-  const revertLoading = () => {
-    const freshStore = useStore.getState();
-    freshStore.setNodes(
-      freshStore.nodes.map(node => 
-        selectedNodes.find(s => s.id === node.id) 
-          ? { ...node, data: { ...node.data, status: 'idle' } } 
-          : node
-      )
-    );
-  };
+  taskRegistry.set(taskId, {
+    abortController,
+    nodeIds: selectedNodes.map((n) => n.id),
+  });
+
+  const store = useStore.getState();
+  const runningAction = { taskId, actionId: action.id, actionName: action.name };
+
+  store.setNodes(
+    store.nodes.map((node) => {
+      if (selectedNodes.find((s) => s.id === node.id)) {
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            runningActions: [...(node.data.runningActions || []), runningAction],
+          },
+        };
+      }
+      return node;
+    })
+  );
 
   try {
     const combinedContent = selectedNodes.map(n => n.data.content).join('\n\n---\n\n');
@@ -234,20 +309,29 @@ export async function processAction(action: ActionConfig, selectedNodes: IdeaNod
 
       let basePrompt = action.processor.payload.replace(/\{\{selected_content\}\}/g, combinedContent);
       selectedNodes.forEach((node, index) => {
-        basePrompt = basePrompt.replace(new RegExp(`\\{\\{node_${index}\\}\\}`, 'g'), node.data.content);
+        basePrompt = basePrompt.replace(new RegExp(`\\\{\{node_${index}\}\}`, 'g'), node.data.content);
       });
 
       try {
-        results = await callAI(basePrompt, action.processor.modelId);
+        results = await callAI(basePrompt, action.processor.modelId, abortController.signal);
       } catch (e) {
+        if (e instanceof DOMException && e.name === 'AbortError') throw e;
         console.error("Failed to parse JSON response", e);
-        results = [{ content: "Error parsing LLM response." }];
+        const msg = e instanceof Error ? e.message : String(e);
+        results = [{ content: `请求失败: ${msg}` }];
       }
 
     } else if (action.processor.type === 'code') {
       try {
-        results = await executeWorkerCode(action.processor.payload, selectedNodes);
+        results = await executeWorkerCode(action.processor.payload, selectedNodes, {
+          signal: abortController.signal,
+          onWorker: (w) => {
+            const task = taskRegistry.get(taskId);
+            if (task) task.worker = w;
+          },
+        });
       } catch (e) {
+        if (e instanceof DOMException && e.name === 'AbortError') throw e;
         console.error("Failed to execute code logic", e);
         results = [{ content: "Error executing custom code: " + (e instanceof Error ? e.message : String(e)) }];
       }
@@ -265,8 +349,6 @@ export async function processAction(action: ActionConfig, selectedNodes: IdeaNod
       if (Array.isArray(results)) {
         if (results.length > 0) {
           applyLayout(action, selectedNodes, results, sourceMeta);
-        } else {
-          revertLoading();
         }
       } else if (typeof results === 'object') {
         if (results.nodes || results.edges) {
@@ -282,22 +364,16 @@ export async function processAction(action: ActionConfig, selectedNodes: IdeaNod
       } else if (typeof results === 'string') {
         // Raw string
         applyLayout(action, selectedNodes, [{ content: results }], sourceMeta);
-      } else {
-        revertLoading();
       }
-    } else {
-      revertLoading();
     }
   } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      console.log('Action cancelled');
+      return;
+    }
     console.error("Error processing action:", error);
-    const freshStore = useStore.getState();
-    freshStore.setNodes(
-      freshStore.nodes.map(node => 
-        selectedNodes.find(s => s.id === node.id) 
-          ? { ...node, data: { ...node.data, status: 'error' } } 
-          : node
-      )
-    );
+  } finally {
+    clearTask(taskId);
   }
 }
 

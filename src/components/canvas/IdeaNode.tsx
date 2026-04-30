@@ -3,8 +3,9 @@ import { Handle, Position, NodeProps } from '@xyflow/react';
 import { IdeaNodeData, IdeaNode } from '@/types';
 import Markdown from 'react-markdown';
 import { cn } from '@/lib/utils';
-import { Sparkles, Edit3, User } from 'lucide-react';
+import { Sparkles, Edit3, User, X } from 'lucide-react';
 import { useStore } from '@/store/useStore';
+import { cancelTask } from '@/lib/engine';
 
 export const IdeaNodeComponent = memo(({ id, data, selected }: NodeProps<IdeaNode>) => {
   const [isEditing, setIsEditing] = useState(false);
@@ -59,9 +60,7 @@ export const IdeaNodeComponent = memo(({ id, data, selected }: NodeProps<IdeaNod
     <div
       className={cn(
         "min-w-[250px] min-h-[100px] max-w-[400px] bg-card text-card-foreground p-4 rounded-xl border-2 shadow-sm transition-all duration-200",
-        selected ? 'border-primary shadow-md ring-2 ring-primary/20' : 'border-border',
-        data.status === 'processing' && 'animate-pulse ring-2 ring-purple-500/50 border-purple-500',
-        data.status === 'error' && 'border-destructive'
+        selected ? 'border-primary shadow-md ring-2 ring-primary/20' : 'border-border'
       )}
       onDoubleClick={handleDoubleClick}
     >
@@ -75,14 +74,6 @@ export const IdeaNodeComponent = memo(({ id, data, selected }: NodeProps<IdeaNod
         position={Position.Bottom}
         className="w-3 h-3 border-2 bg-background border-primary"
       />
-
-      {data.status === 'processing' && (
-        <div className="absolute top-2 right-2 flex items-center gap-1.5 opacity-70">
-          <div className="w-1.5 h-1.5 bg-purple-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-          <div className="w-1.5 h-1.5 bg-purple-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-          <div className="w-1.5 h-1.5 bg-purple-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-        </div>
-      )}
 
       {/* Meta tags */}
       <div className="absolute -top-3 left-3 flex gap-1 z-10 select-none">
@@ -129,6 +120,30 @@ export const IdeaNodeComponent = memo(({ id, data, selected }: NodeProps<IdeaNod
         </div>
       )}
       </div>
+
+      {/* Running actions */}
+      {(data.runningActions || []).length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {(data.runningActions || []).map((ra) => (
+            <div
+              key={ra.taskId}
+              className="inline-flex items-center gap-1 bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300 text-[10px] font-medium px-2 py-0.5 rounded-full shadow-sm border border-purple-200 dark:border-purple-800 animate-pulse"
+            >
+              <span>{ra.actionName}</span>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  cancelTask(ra.taskId);
+                }}
+                className="inline-flex items-center justify-center rounded-full hover:bg-purple-200 dark:hover:bg-purple-800 p-0.5 -mr-0.5 cursor-pointer"
+                title="取消任务"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 });
