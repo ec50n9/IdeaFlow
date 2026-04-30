@@ -116,10 +116,16 @@ export const IdeaNodeComponent = memo(({ id, data, selected }: NodeProps<IdeaNod
       {/* Meta tags */}
       <div className="absolute -top-3 left-3 flex gap-1 z-10 select-none">
         {data.sourceType === 'ai' ? (
-          <div className={cn("flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full shadow-sm border", getActionColorClasses(data.sourceColor))}>
-            <Sparkles className="w-3 h-3" />
-            <span>{data.sourceModel ? `${data.sourceProvider} - ${data.sourceModel}` : 'AI 生成'}</span>
-            {data.sourceAction && <span className="opacity-70 ml-1 border-l pl-1 border-current">{data.sourceAction}</span>}
+          <div className={cn("group flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full shadow-sm border overflow-hidden", getActionColorClasses(data.sourceColor))}>
+            <Sparkles className="w-3 h-3 shrink-0" />
+            <span className="shrink-0">{data.sourceAction || 'AI 生成'}</span>
+            {data.sourceModel && (
+              <span className="max-w-0 opacity-0 group-hover:max-w-[200px] group-hover:opacity-100 transition-all duration-300 ease-out whitespace-nowrap overflow-hidden">
+                <span className="opacity-70 ml-1 border-l pl-1 border-current">
+                  {data.sourceProvider} - {data.sourceModel}
+                </span>
+              </span>
+            )}
           </div>
         ) : data.sourceType === 'manual' ? (
           <div className="flex items-center gap-1 bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300 text-[10px] font-medium px-2 py-0.5 rounded-full shadow-sm border border-blue-200 dark:border-blue-800">
