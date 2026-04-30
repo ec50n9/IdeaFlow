@@ -261,9 +261,9 @@ export function ActionConfigPanel() {
                   >
                     <option value="">未配置模型</option>
                     {providers.map(p => (
-                      <optgroup key={p.id} label={p.name}>
+                      <optgroup key={p.id} label={`${p.name} (${p.key})`}>
                         {p.models.map(m => (
-                          <option key={m.id} value={m.id}>
+                          <option key={m.id} value={`${p.key}/${m.model}`}>
                             {m.model} [{getCapabilityLabels(m).join(', ')}]
                           </option>
                         ))}
