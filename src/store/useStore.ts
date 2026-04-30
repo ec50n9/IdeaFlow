@@ -38,6 +38,9 @@ interface AppState {
   addProvider: (provider: AIProviderConfig) => void;
   updateProvider: (id: string, provider: Partial<AIProviderConfig>) => void;
   deleteProvider: (id: string) => void;
+
+  hasUserCreatedNode: boolean;
+  setHasUserCreatedNode: (v: boolean) => void;
 }
 
 const defaultActions: ActionConfig[] = [
@@ -170,7 +173,10 @@ export const useStore = create<AppState>()(
         set({
           providers: get().providers.filter((prov) => prov.id !== id),
         });
-      }
+      },
+
+      hasUserCreatedNode: false,
+      setHasUserCreatedNode: (v: boolean) => set({ hasUserCreatedNode: v }),
     }),
     {
       name: 'mindflow-storage',
@@ -182,6 +188,7 @@ export const useStore = create<AppState>()(
         })),
         edges: state.edges,
         providers: state.providers,
+        hasUserCreatedNode: state.hasUserCreatedNode,
       }),
     }
   )

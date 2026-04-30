@@ -26,6 +26,8 @@ export const Canvas = () => {
     onEdgesChange,
     onConnect,
     addNode,
+    hasUserCreatedNode,
+    setHasUserCreatedNode,
   } = useStore();
   
   const { screenToFlowPosition } = useReactFlow();
@@ -55,6 +57,7 @@ export const Canvas = () => {
             sourceType: 'manual'
           },
         });
+        setHasUserCreatedNode(true);
       }
       lastClickTime.current = now;
     },
@@ -81,10 +84,11 @@ export const Canvas = () => {
         <Controls className="fill-foreground" />
         <MiniMap zoomable pannable nodeClassName="bg-primary/20" className="border-border bg-background" />
         
-        <Panel position="top-left" className="bg-background/80 backdrop-blur-md p-4 rounded-xl shadow-sm border m-4 flex flex-col gap-1 z-50 pointer-events-none">
+        <Panel position="top-left" className="bg-background/80 backdrop-blur-md px-4 py-3 rounded-xl shadow-sm border m-4 flex flex-col gap-0.5 z-50 pointer-events-none">
           <h1 className="font-semibold tracking-tight text-lg">思维流引擎</h1>
-          <p className="text-sm text-muted-foreground">双击画布添加想法</p>
-          <p className="text-xs text-muted-foreground/70 mt-1">按住 Shift + 拖拽 进行多选</p>
+          {!hasUserCreatedNode && (
+            <p className="text-sm text-muted-foreground">双击画布添加想法</p>
+          )}
         </Panel>
       </ReactFlow>
     </div>
