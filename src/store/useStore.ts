@@ -39,6 +39,8 @@ interface AppState {
   addProvider: (provider: AIProviderConfig) => void;
   updateProvider: (id: string, provider: Partial<AIProviderConfig>) => void;
   deleteProvider: (id: string) => void;
+  setProviders: (providers: AIProviderConfig[]) => void;
+  setActions: (actions: ActionConfig[]) => void;
 
   hasUserCreatedNode: boolean;
   setHasUserCreatedNode: (v: boolean) => void;
@@ -202,6 +204,14 @@ export const useStore = create<AppState>()(
         set({
           providers: get().providers.filter((prov) => prov.id !== id),
         });
+      },
+
+      setProviders: (providers: AIProviderConfig[]) => {
+        set({ providers });
+      },
+
+      setActions: (actions: ActionConfig[]) => {
+        set({ actions });
       },
 
       hasUserCreatedNode: false,

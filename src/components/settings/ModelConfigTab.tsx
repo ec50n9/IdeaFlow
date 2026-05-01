@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useStore } from '@/store/useStore';
 import { Button } from '@/components/ui/button';
-import { Bot, Plus, Trash2, X, Cpu, Settings } from 'lucide-react';
+import { Bot, Plus, Trash2, Settings } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -36,9 +36,8 @@ function getDefaultProtocol(): ModelProtocol {
   return 'openai';
 }
 
-export function AIModelConfigPanel() {
+export function ModelConfigTab() {
   const { providers, addProvider, updateProvider, deleteProvider } = useStore();
-  const [panelOpen, setPanelOpen] = useState(false);
 
   const [editingProvider, setEditingProvider] = useState<AIProviderConfig | null>(null);
   const [isNewProvider, setIsNewProvider] = useState(false);
@@ -79,89 +78,73 @@ export function AIModelConfigPanel() {
   };
 
   return (
-    <>
-      <Button variant="outline" size="icon" className="fixed top-4 right-16 z-50 bg-background/80 backdrop-blur-md shadow-sm" onClick={() => setPanelOpen(true)}>
-        <Cpu className="w-5 h-5 text-muted-foreground" />
-      </Button>
+    <div className="flex flex-col gap-8">
+      <div className="flex items-center justify-between pt-2">
+        <div>
+          <h2 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
+            <Bot className="w-6 h-6 text-primary" />
+            AI 模型配置
+          </h2>
+          <p className="text-muted-foreground text-base mt-1">管理并配置您的各类 AI 提供商与模型。</p>
+        </div>
+        <Button onClick={handleAddNew} className="gap-2 shadow-sm shrink-0 whitespace-nowrap">
+          <Plus className="w-4 h-4" /> 添加供应商配置
+        </Button>
+      </div>
 
-      <Dialog open={panelOpen} onOpenChange={setPanelOpen}>
-        <DialogContent className="max-w-none w-screen h-[100dvh] overflow-y-auto p-0 m-0 rounded-none border-none bg-background/95 backdrop-blur-lg flex flex-col sm:max-w-none [&>button]:hidden gap-0">
-          <div className="flex-none p-6 border-b flex items-center justify-between sticky top-0 bg-background/80 backdrop-blur-md z-10 w-full">
-            <h2 className="text-2xl font-semibold tracking-tight pl-2 flex items-center gap-2">
-              <Bot className="w-6 h-6 text-primary" />
-              AI 模型配置
-            </h2>
-            <Button variant="ghost" size="icon" className="h-10 w-10 shrink-0 rounded-full bg-background/50 backdrop-blur shadow-sm border" onClick={() => setPanelOpen(false)}>
-              <X className="w-5 h-5" />
-            </Button>
-          </div>
-
-          <div className="flex-1 w-full max-w-5xl mx-auto p-4 sm:p-6 lg:p-8 flex flex-col gap-8">
-            <div className="flex items-center justify-between pt-2">
-              <div>
-                <p className="text-muted-foreground text-base">管理并配置您的各类 AI 提供商与模型。</p>
-              </div>
-              <Button onClick={handleAddNew} className="gap-2 shadow-sm shrink-0 whitespace-nowrap">
-                <Plus className="w-4 h-4" /> 添加供应商配置
-              </Button>
+      <div className="flex flex-col gap-8 pb-20">
+        {providers?.map(provider => (
+          <div key={provider.id} className="group flex flex-col border rounded-3xl bg-card text-card-foreground shadow-sm hover:shadow-md transition-all hover:border-primary/30 relative overflow-hidden">
+            <div className="flex items-center justify-between bg-muted/30 px-6 py-4 border-b">
+               <div className="flex flex-col gap-1">
+                  <div className="font-semibold text-xl">{provider.name}</div>
+                  <div className="text-xs text-muted-foreground font-mono truncate max-w-md">API接口: {provider.endpoint || '默认'}</div>
+               </div>
+               <div className="flex gap-2 shrink-0">
+                 <Button variant="secondary" size="sm" className="gap-1.5" onClick={() => setEditingProvider(provider)}>
+                   <Settings className="w-4 h-4" /> 配置
+                 </Button>
+                 <Button variant="outline" size="icon" className="h-9 w-9 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors" onClick={() => deleteProvider(provider.id)}>
+                   <Trash2 className="w-4 h-4" />
+                 </Button>
+               </div>
             </div>
-
-            <div className="flex flex-col gap-8 pb-20">
-              {providers?.map(provider => (
-                <div key={provider.id} className="group flex flex-col border rounded-3xl bg-card text-card-foreground shadow-sm hover:shadow-md transition-all hover:border-primary/30 relative overflow-hidden">
-                  <div className="flex items-center justify-between bg-muted/30 px-6 py-4 border-b">
-                     <div className="flex flex-col gap-1">
-                        <div className="font-semibold text-xl">{provider.name}</div>
-                        <div className="text-xs text-muted-foreground font-mono truncate max-w-md">API接口: {provider.endpoint || '默认'}</div>
-                     </div>
-                     <div className="flex gap-2 shrink-0">
-                       <Button variant="secondary" size="sm" className="gap-1.5" onClick={() => setEditingProvider(provider)}>
-                         <Settings className="w-4 h-4" /> 配置
-                       </Button>
-                       <Button variant="outline" size="icon" className="h-9 w-9 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors" onClick={() => deleteProvider(provider.id)}>
-                         <Trash2 className="w-4 h-4" />
-                       </Button>
-                     </div>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-6">
-                    {provider.models.map(mod => (
-                      <div key={mod.id} className="flex flex-col p-4 border rounded-2xl bg-background shadow-sm">
-                         <div className="font-medium text-base mb-1">{mod.model}</div>
-                         <div className="flex flex-wrap gap-1 mb-3">
-                           {mod.protocol && PROTOCOL_LABELS[mod.protocol] && (
-                             <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded">
-                               {PROTOCOL_LABELS[mod.protocol]}
-                             </span>
-                           )}
-                           {getCapabilityLabels(mod).map(label => (
-                             <span key={label} className="text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded">
-                               {label}
-                             </span>
-                           ))}
-                         </div>
-                         <div className="text-xs font-mono text-muted-foreground truncate" title={mod.model}>
-                           标识 ID: {mod.model}
-                         </div>
-                      </div>
-                    ))}
-                    {(!provider.models || provider.models.length === 0) && (
-                       <div className="col-span-full text-sm text-muted-foreground">暂未配置任何下属模型。</div>
-                    )}
-                  </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-6">
+              {provider.models.map(mod => (
+                <div key={mod.id} className="flex flex-col p-4 border rounded-2xl bg-background shadow-sm">
+                   <div className="font-medium text-base mb-1">{mod.model}</div>
+                   <div className="flex flex-wrap gap-1 mb-3">
+                     {mod.protocol && PROTOCOL_LABELS[mod.protocol] && (
+                       <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded">
+                         {PROTOCOL_LABELS[mod.protocol]}
+                       </span>
+                     )}
+                     {getCapabilityLabels(mod).map(label => (
+                       <span key={label} className="text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded">
+                         {label}
+                       </span>
+                     ))}
+                   </div>
+                   <div className="text-xs font-mono text-muted-foreground truncate" title={mod.model}>
+                     标识 ID: {mod.model}
+                   </div>
                 </div>
               ))}
-              
-              {(!providers || providers.length === 0) && (
-                <div className="py-20 text-center border-2 border-dashed rounded-3xl bg-muted/20 text-muted-foreground flex flex-col items-center justify-center gap-3">
-                  <Bot className="w-12 h-12 opacity-20 mb-2" />
-                  <p className="text-lg">您还没有配置任何供应商。</p>
-                  <Button variant="outline" onClick={handleAddNew} className="mt-2">立即添加配置</Button>
-                </div>
+              {(!provider.models || provider.models.length === 0) && (
+                 <div className="col-span-full text-sm text-muted-foreground">暂未配置任何下属模型。</div>
               )}
             </div>
           </div>
-        </DialogContent>
-      </Dialog>
+        ))}
+        
+        {(!providers || providers.length === 0) && (
+          <div className="py-20 text-center border-2 border-dashed rounded-3xl bg-muted/20 text-muted-foreground flex flex-col items-center justify-center gap-3">
+            <Bot className="w-12 h-12 opacity-20 mb-2" />
+            <p className="text-lg">您还没有配置任何供应商。</p>
+            <Button variant="outline" onClick={handleAddNew} className="mt-2">立即添加配置</Button>
+          </div>
+        )}
+      </div>
 
       <Dialog open={!!editingProvider} onOpenChange={(open) => !open && setEditingProvider(null)}>
         <DialogContent className="sm:max-w-[700px] gap-6 flex flex-col max-h-[85vh] overflow-hidden p-0">
@@ -348,6 +331,6 @@ export function AIModelConfigPanel() {
           </div>
         </DialogContent>
       </Dialog>
-    </>
+    </div>
   );
 }

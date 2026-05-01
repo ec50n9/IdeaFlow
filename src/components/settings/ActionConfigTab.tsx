@@ -1,14 +1,13 @@
 import { useState } from 'react';
 import { useStore } from '@/store/useStore';
 import { Button } from '@/components/ui/button';
-import { Settings, Plus, Trash2, Pencil, X, HelpCircle } from 'lucide-react';
+import { Settings, Plus, Trash2, Pencil, HelpCircle } from 'lucide-react';
 import { capabilityLabel } from '@/lib/modelSlots';
 import { ActionConfig } from '@/types';
 import { v4 as uuidv4 } from 'uuid';
-import { PRESET_ACTION_COLORS, ACTION_DOT_CLASS } from '@/lib/utils';
-import { cn } from '@/lib/utils';
+import { PRESET_ACTION_COLORS, ACTION_DOT_CLASS, cn } from '@/lib/utils';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { ActionEditDialog } from './ActionEditDialog';
+import { ActionEditDialog } from '@/components/ActionEditDialog';
 
 function getCapabilityLabels(model: { supportsText: boolean; supportsTextToImage: boolean; supportsImageToImage: boolean }): string[] {
   const labels: string[] = [];
@@ -18,15 +17,12 @@ function getCapabilityLabels(model: { supportsText: boolean; supportsTextToImage
   return labels;
 }
 
-
-
-export function ActionConfigPanel() {
+export function ActionConfigTab() {
   const { actions, addAction, updateAction, deleteAction, providers } = useStore();
-  const [panelOpen, setPanelOpen] = useState(false);
   const [editingAction, setEditingAction] = useState<ActionConfig | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [isNewAction, setIsNewAction] = useState(false);
 
-  // Helper to get slot details from action's own slots
   const getSlotLabel = (action: ActionConfig) => {
     const slots = action.processor.slots || [];
     if (action.processor.type === 'llm') {
@@ -34,12 +30,9 @@ export function ActionConfigPanel() {
       if (!slot) return "未配置插槽";
       return `${slot.identifier} (${capabilityLabel(slot.capability)})`;
     }
-    // Code 模式显示所有声明的插槽
     if (slots.length === 0) return "未配置插槽";
     return slots.map(s => `${s.identifier} (${capabilityLabel(s.capability)})`).join(', ');
   };
-
-  const [isNewAction, setIsNewAction] = useState(false);
 
   const handleAddNew = () => {
     const usedColors = new Set(actions.map(a => a.color).filter(Boolean));
@@ -72,74 +65,62 @@ export function ActionConfigPanel() {
   };
 
   return (
-    <>
-      <Button variant="outline" size="icon" className="fixed top-4 right-4 z-50 bg-background/80 backdrop-blur-md shadow-sm" onClick={() => setPanelOpen(true)}>
-        <Settings className="w-5 h-5 text-muted-foreground" />
-      </Button>
-
-      <Dialog open={panelOpen} onOpenChange={setPanelOpen}>
-        <DialogContent className="max-w-none w-screen h-[100dvh] overflow-y-auto p-0 m-0 rounded-none border-none bg-background/95 backdrop-blur-lg flex flex-col sm:max-w-none [&>button]:hidden gap-0">
-          <div className="flex-none p-6 border-b flex items-center justify-between sticky top-0 bg-background/80 backdrop-blur-md z-10 w-full">
-            <h2 className="text-2xl font-semibold tracking-tight pl-2">动作配置中心</h2>
-            <div className="flex items-center gap-4">
-              <Button onClick={handleAddNew} className="gap-1.5 rounded-full px-5">
-                <Plus className="w-4 h-4" /> 添加动作
-              </Button>
-              <Button variant="ghost" size="icon" onClick={() => setPanelOpen(false)} className="rounded-full shrink-0">
-                <X className="w-6 h-6" />
-              </Button>
-            </div>
-          </div>
-          
-          <div className="flex-1 p-6 sm:p-10 max-w-7xl mx-auto w-full">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {actions.map((action) => (
-                <div key={action.id} className="border bg-card text-card-foreground rounded-2xl p-6 flex flex-col gap-4 shadow-sm hover:shadow-md transition-shadow">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2.5">
-                      <div className={cn("w-3 h-3 rounded-full shrink-0", ACTION_DOT_CLASS[action.color || 'purple'])} />
-                      <h3 className="font-semibold text-lg">{action.name}</h3>
-                    </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <Button variant="ghost" size="icon" onClick={() => setEditingAction(action)} className="h-8 w-8 text-muted-foreground hover:text-primary">
-                        <Pencil className="w-4 h-4" />
-                      </Button>
-                      <Button variant="ghost" size="icon" onClick={() => deleteAction(action.id)} className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10">
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </div>
-                  
-                  <div className="text-sm text-muted-foreground">
-                    <p>触发条件: {action.trigger.minNodes} 到 {action.trigger.maxNodes === null ? '∞' : action.trigger.maxNodes} 个节点</p>
-                    <p>连线输出: {
-                      action.output.connectionType === 'source_to_new' ? '源节点 -> 新节点' :
-                      action.output.connectionType === 'new_to_source' ? '新节点 -> 源节点' : '无连线'
-                    }</p>
-                    {action.processor.type === 'llm' && (
-                      <p>模型插槽: {getSlotLabel(action)}</p>
-                    )}
-                  </div>
-                  
-                  <div className="mt-auto pt-4 relative">
-                    <div className="text-xs font-mono bg-muted/50 p-3 rounded-lg line-clamp-3 text-muted-foreground border">
-                      {action.processor.payload}
-                    </div>
-                  </div>
-                </div>
-              ))}
+    <div className="flex flex-col gap-8">
+      <div className="flex items-center justify-between pt-2">
+        <div>
+          <h2 className="text-2xl font-semibold tracking-tight">动作配置中心</h2>
+          <p className="text-muted-foreground text-base mt-1">管理并配置您的各类可复用动作。</p>
+        </div>
+        <Button onClick={handleAddNew} className="gap-1.5 rounded-full px-5">
+          <Plus className="w-4 h-4" /> 添加动作
+        </Button>
+      </div>
+      
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {actions.map((action) => (
+          <div key={action.id} className="border bg-card text-card-foreground rounded-2xl p-6 flex flex-col gap-4 shadow-sm hover:shadow-md transition-shadow">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className={cn("w-3 h-3 rounded-full shrink-0", ACTION_DOT_CLASS[action.color || 'purple'])} />
+                <h3 className="font-semibold text-lg">{action.name}</h3>
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                <Button variant="ghost" size="icon" onClick={() => setEditingAction(action)} className="h-8 w-8 text-muted-foreground hover:text-primary">
+                  <Pencil className="w-4 h-4" />
+                </Button>
+                <Button variant="ghost" size="icon" onClick={() => deleteAction(action.id)} className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10">
+                  <Trash2 className="w-4 h-4" />
+                </Button>
+              </div>
             </div>
             
-            {actions.length === 0 && (
-              <div className="text-center py-20 text-muted-foreground mt-10 border-2 border-dashed rounded-3xl">
-                <Settings className="w-12 h-12 mx-auto mb-4 opacity-20" />
-                <p className="text-lg">暂无动作配置</p>
-                <p className="text-sm">点击 "添加动作" 以开始使用。</p>
+            <div className="text-sm text-muted-foreground">
+              <p>触发条件: {action.trigger.minNodes} 到 {action.trigger.maxNodes === null ? '∞' : action.trigger.maxNodes} 个节点</p>
+              <p>连线输出: {
+                action.output.connectionType === 'source_to_new' ? '源节点 -> 新节点' :
+                action.output.connectionType === 'new_to_source' ? '新节点 -> 源节点' : '无连线'
+              }</p>
+              {action.processor.type === 'llm' && (
+                <p>模型插槽: {getSlotLabel(action)}</p>
+              )}
+            </div>
+            
+            <div className="mt-auto pt-4 relative">
+              <div className="text-xs font-mono bg-muted/50 p-3 rounded-lg line-clamp-3 text-muted-foreground border">
+                {action.processor.payload}
               </div>
-            )}
+            </div>
           </div>
-        </DialogContent>
-      </Dialog>
+        ))}
+      </div>
+      
+      {actions.length === 0 && (
+        <div className="text-center py-20 text-muted-foreground mt-10 border-2 border-dashed rounded-3xl">
+          <Settings className="w-12 h-12 mx-auto mb-4 opacity-20" />
+          <p className="text-lg">暂无动作配置</p>
+          <p className="text-sm">点击 "添加动作" 以开始使用。</p>
+        </div>
+      )}
 
       <ActionEditDialog
         open={!!editingAction}
@@ -153,7 +134,6 @@ export function ActionConfigPanel() {
         onSave={handleSaveEdit}
         isNew={isNewAction}
       />
-
 
       {/* Code Help Dialog */}
       <Dialog open={helpOpen} onOpenChange={setHelpOpen}>
@@ -286,6 +266,6 @@ return results;`}
           </div>
         </DialogContent>
       </Dialog>
-    </>
+    </div>
   );
 }
