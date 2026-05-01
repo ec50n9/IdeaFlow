@@ -14,6 +14,7 @@ import {
   applyEdgeChanges,
 } from '@xyflow/react';
 import { AppNode, ActionConfig, AIModelConfig, AIProviderConfig } from '@/types';
+import { deriveMediaType } from '@/lib/triggerMatcher';
 import { v4 as uuidv4 } from 'uuid';
 
 interface AppState {
@@ -100,7 +101,7 @@ export const useStore = create<AppState>()(
           id: 'initial-node',
           type: 'ideaNode',
           position: { x: window.innerWidth / 2 - 150, y: window.innerHeight / 2 - 100 },
-          data: { content: '双击进行编辑。\n\n或者双击背景添加新想法。', status: 'idle' },
+          data: { content: '双击进行编辑。\n\n或者双击背景添加新想法。', status: 'idle', mediaType: 'text' },
         }
       ],
       edges: [],
@@ -126,8 +127,15 @@ export const useStore = create<AppState>()(
       },
 
       addNode: (node: AppNode) => {
+        const enriched = { ...node };
+        if (enriched.type === 'ideaNode' && enriched.data.content) {
+          enriched.data = {
+            ...enriched.data,
+            mediaType: deriveMediaType(enriched.data.content),
+          };
+        }
         set({
-          nodes: [...get().nodes, node],
+          nodes: [...get().nodes, enriched as AppNode],
         });
       },
 
@@ -135,9 +143,14 @@ export const useStore = create<AppState>()(
         set({
           nodes: get().nodes.map((node) => {
             if (node.id === id) {
+              const merged = { ...node.data, ...data };
+              // 如果更新了 content，自动推导 mediaType
+              if ('content' in data && typeof merged.content === 'string') {
+                merged.mediaType = deriveMediaType(merged.content);
+              }
               return {
                 ...node,
-                data: { ...node.data, ...data },
+                data: merged,
               } as AppNode;
             }
             return node;

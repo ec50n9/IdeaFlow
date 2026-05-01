@@ -13,7 +13,7 @@ import { SettingsPanel } from '@/components/settings/SettingsPanel';
 
 export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<'models' | 'actions' | 'export-import'>('models');
+  const [settingsTab, setSettingsTab] = useState<'models' | 'actions' | 'export-import'>('actions');
 
   const handleOpenSettings = (tab: 'models' | 'actions' | 'export-import') => {
     setSettingsTab(tab);
@@ -30,7 +30,7 @@ export default function App() {
         variant="outline"
         size="icon"
         className="fixed top-4 right-4 z-50 bg-background/80 backdrop-blur-md shadow-sm"
-        onClick={() => handleOpenSettings('models')}
+        onClick={() => handleOpenSettings('actions')}
       >
         <Settings className="w-5 h-5 text-muted-foreground" />
       </Button>

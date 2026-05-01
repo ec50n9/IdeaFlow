@@ -5,6 +5,7 @@ import { Node, Edge } from '@xyflow/react';
 import { buildLayout, releaseDirections, computeNodeGroup, computeNewNodePositions } from '@/lib/layout';
 import { getAdapter, type OnChunk, TEXT_INSTRUCTION } from '@/lib/adapters';
 import { extractAndStoreImages, extractImageUrls } from '@/lib/imageUtils';
+import { buildConstraintMap } from '@/lib/triggerMatcher';
 import { resolveSlot, getSlotRef, getModelsByCapability, capabilityLabel, getUnresolvedSlots, type UnresolvedSlot } from '@/lib/modelSlots';
 
 const taskRegistry = new Map<string, {
@@ -404,6 +405,38 @@ export async function processAction(action: ActionConfig, selectedNodes: IdeaNod
       selectedNodes.forEach((node, index) => {
         basePrompt = basePrompt.replace(new RegExp(`\\\{\{node_${index}\}\}`, 'g'), node.data.content);
       });
+
+      // 处理约束组占位符（如果 action 声明了 constraints）
+      if (action.trigger.constraints && action.trigger.constraints.length > 0) {
+        const constraintMap = buildConstraintMap(selectedNodes, action.trigger.constraints);
+        for (const [constraintId, nodes] of constraintMap) {
+          const contents = nodes.map((n) => n.data.content);
+          // {{constraint.id}}
+          basePrompt = basePrompt.replace(
+            new RegExp(`\\\{\{constraint\\.${constraintId}\}\}`, 'g'),
+            contents.join('\n\n---\n\n')
+          );
+          // {{constraint.id[0]}}、{{constraint.id[1]}}...
+          nodes.forEach((node, idx) => {
+            basePrompt = basePrompt.replace(
+              new RegExp(`\\\{\{constraint\\.${constraintId}\\[${idx}\\]\}\}`, 'g'),
+              node.data.content
+            );
+          });
+          // {{constraint.id.images}}
+          const constraintImages: string[] = [];
+          for (const node of nodes) {
+            const urls = await extractImageUrls(node.data.content);
+            constraintImages.push(...urls);
+          }
+          if (constraintImages.length > 0) {
+            basePrompt = basePrompt.replace(
+              new RegExp(`\\\{\{constraint\\.${constraintId}\\.images\}\}`, 'g'),
+              constraintImages.join(', ')
+            );
+          }
+        }
+      }
 
       const images = await extractImagesFromNodes(selectedNodes);
 

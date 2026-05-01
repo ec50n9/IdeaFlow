@@ -1,5 +1,4 @@
 import { useState, useCallback, useEffect } from 'react';
-import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { X, Bot, Settings, FileJson } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -16,12 +15,12 @@ interface SettingsPanelProps {
 }
 
 const NAV_ITEMS: { id: SettingsTab; label: string; icon: React.ElementType }[] = [
-  { id: 'models', label: '模型配置', icon: Bot },
   { id: 'actions', label: '动作配置', icon: Settings },
+  { id: 'models', label: '模型配置', icon: Bot },
   { id: 'export-import', label: '导出/导入', icon: FileJson },
 ];
 
-export function SettingsPanel({ open, onOpenChange, defaultTab = 'models' }: SettingsPanelProps) {
+export function SettingsPanel({ open, onOpenChange, defaultTab = 'actions' }: SettingsPanelProps) {
   const [activeTab, setActiveTab] = useState<SettingsTab>(defaultTab);
 
   useEffect(() => {
@@ -30,11 +29,17 @@ export function SettingsPanel({ open, onOpenChange, defaultTab = 'models' }: Set
     }
   }, [open, defaultTab]);
 
-  const handleOpenChange = useCallback((value: boolean) => {
-    if (!value) {
-      onOpenChange(false);
-    }
-  }, [onOpenChange]);
+  // ESC 键关闭
+  useEffect(() => {
+    if (!open) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onOpenChange(false);
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [open, onOpenChange]);
 
   const renderNavButton = (item: typeof NAV_ITEMS[number], isActive: boolean, variant: 'sidebar' | 'mobile') => (
     <button
@@ -68,43 +73,43 @@ export function SettingsPanel({ open, onOpenChange, defaultTab = 'models' }: Set
     }
   };
 
+  if (!open) return null;
+
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-none w-screen h-[100dvh] overflow-hidden p-0 m-0 rounded-none border-none bg-background/95 backdrop-blur-lg flex flex-col md:flex-row sm:max-w-none [&>button]:hidden gap-0">
-        {/* Mobile Header + Tabs */}
-        <div className="md:hidden flex-none bg-background/80 backdrop-blur-md border-b">
-          <div className="flex items-center justify-between px-4 py-3">
-            <h2 className="text-lg font-semibold tracking-tight">设置</h2>
-            <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 rounded-full" onClick={() => onOpenChange(false)}>
-              <X className="w-4 h-4" />
-            </Button>
-          </div>
-          <nav className="flex gap-1 px-3 pb-2 overflow-x-auto">
-            {NAV_ITEMS.map((item) => renderNavButton(item, activeTab === item.id, 'mobile'))}
-          </nav>
+    <div className="fixed inset-0 z-50 bg-background/95 backdrop-blur-lg flex flex-col md:flex-row animate-in fade-in duration-200">
+      {/* Mobile Header + Tabs */}
+      <div className="md:hidden flex-none bg-background/80 backdrop-blur-md border-b">
+        <div className="flex items-center justify-between px-4 py-3">
+          <h2 className="text-lg font-semibold tracking-tight">设置</h2>
+          <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 rounded-full" onClick={() => onOpenChange(false)}>
+            <X className="w-4 h-4" />
+          </Button>
+        </div>
+        <nav className="flex gap-1 px-3 pb-2 overflow-x-auto">
+          {NAV_ITEMS.map((item) => renderNavButton(item, activeTab === item.id, 'mobile'))}
+        </nav>
+      </div>
+
+      {/* Desktop Sidebar */}
+      <div className="hidden md:flex w-64 flex-none border-r bg-background/80 backdrop-blur-md flex-col">
+        <div className="flex items-center justify-between p-4 border-b">
+          <h2 className="text-lg font-semibold tracking-tight">设置</h2>
+          <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 rounded-full" onClick={() => onOpenChange(false)}>
+            <X className="w-4 h-4" />
+          </Button>
         </div>
 
-        {/* Desktop Sidebar */}
-        <div className="hidden md:flex w-64 flex-none border-r bg-background/80 backdrop-blur-md flex-col">
-          <div className="flex items-center justify-between p-4 border-b">
-            <h2 className="text-lg font-semibold tracking-tight">设置</h2>
-            <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 rounded-full" onClick={() => onOpenChange(false)}>
-              <X className="w-4 h-4" />
-            </Button>
-          </div>
+        <nav className="flex flex-col gap-1 p-3">
+          {NAV_ITEMS.map((item) => renderNavButton(item, activeTab === item.id, 'sidebar'))}
+        </nav>
+      </div>
 
-          <nav className="flex flex-col gap-1 p-3">
-            {NAV_ITEMS.map((item) => renderNavButton(item, activeTab === item.id, 'sidebar'))}
-          </nav>
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="w-full max-w-5xl mx-auto p-4 sm:p-6 md:p-10">
+          {renderContent()}
         </div>
-
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto">
-          <div className="w-full max-w-5xl mx-auto p-4 sm:p-6 md:p-10">
-            {renderContent()}
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
+      </div>
+    </div>
   );
 }

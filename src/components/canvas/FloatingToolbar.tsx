@@ -8,6 +8,7 @@ import { OneOffActionDialog } from '@/components/OneOffActionDialog';
 import { SlotResolveDialog } from '@/components/SlotResolveDialog';
 import { ActionConfig, IdeaNode } from '@/types';
 import { ChevronDown } from 'lucide-react';
+import { matchTrigger, formatTriggerDescription } from '@/lib/triggerMatcher';
 
 export const FloatingToolbar = memo(() => {
   const { actions, nodes } = useStore();
@@ -32,14 +33,8 @@ export const FloatingToolbar = memo(() => {
   };
 
   const availableActions = useMemo(() => {
-    return actions.filter((action) => {
-      const min = action.trigger.minNodes;
-      const max = action.trigger.maxNodes;
-      if (selectedCount < min) return false;
-      if (max !== null && selectedCount > max) return false;
-      return true;
-    });
-  }, [actions, selectedCount]);
+    return actions.filter((action) => matchTrigger(selectedNodes, action.trigger));
+  }, [actions, selectedNodes]);
 
   if (selectedCount === 0) {
     return null;
@@ -64,6 +59,7 @@ export const FloatingToolbar = memo(() => {
           <Button
             key={action.id}
             size="sm"
+            title={formatTriggerDescription(action.trigger)}
             className={cn(
               "rounded-full flex items-center gap-1.5 font-medium shadow-sm hover:shadow-md transition-all border text-xs px-3 py-1 h-auto",
               getActionColorClasses(action.color)
@@ -102,6 +98,7 @@ export const FloatingToolbar = memo(() => {
                   key={action.id}
                   size="sm"
                   variant="ghost"
+                  title={formatTriggerDescription(action.trigger)}
                   className={cn(
                     "w-full justify-start rounded-lg text-xs h-auto py-1.5 px-2.5",
                     getActionColorClasses(action.color)

@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { ActionProcessorForm } from '@/components/ActionProcessorForm';
 import { PRESET_ACTION_COLORS, ACTION_DOT_CLASS, cn } from '@/lib/utils';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
+import { TriggerConfigForm } from '@/components/TriggerConfigForm';
 
 interface ActionEditDialogProps {
   open: boolean;
@@ -95,47 +96,15 @@ export function ActionEditDialog({ open, onOpenChange, action, onSave, isNew }: 
             </Popover>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="flex flex-col gap-2">
-              <Label>最少选中节点数</Label>
-              <Input
-                type="number"
-                min={1}
-                value={editingAction.trigger.minNodes}
-                onChange={(e) =>
-                  setEditingAction({
-                    ...editingAction,
-                    trigger: {
-                      ...editingAction.trigger,
-                      minNodes: parseInt(e.target.value) || 1,
-                    },
-                  })
-                }
-              />
-            </div>
-            <div className="flex flex-col gap-2">
-              <Label>最多选中节点数</Label>
-              <Input
-                type="number"
-                placeholder="无限定"
-                value={editingAction.trigger.maxNodes === null ? '' : editingAction.trigger.maxNodes}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setEditingAction({
-                    ...editingAction,
-                    trigger: {
-                      ...editingAction.trigger,
-                      maxNodes: val === '' ? null : parseInt(val),
-                    },
-                  });
-                }}
-              />
-            </div>
-          </div>
+          <TriggerConfigForm
+            trigger={editingAction.trigger}
+            onChange={(trigger) => setEditingAction({ ...editingAction, trigger })}
+          />
 
           <ActionProcessorForm
             processor={editingAction.processor}
             output={editingAction.output}
+            trigger={editingAction.trigger}
             onChange={(processor, output) =>
               setEditingAction({ ...editingAction, processor, output })
             }

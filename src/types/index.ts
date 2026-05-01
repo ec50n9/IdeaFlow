@@ -8,6 +8,8 @@ export interface RunningAction {
   responseLength?: number;
 }
 
+export type NodeMediaType = 'text' | 'image' | 'mixed';
+
 export interface IdeaNodeData extends Record<string, unknown> {
   content: string;
   status: 'idle' | 'processing' | 'error';
@@ -23,6 +25,8 @@ export interface IdeaNodeData extends Record<string, unknown> {
   isEdited?: boolean;
   actionId?: string;
   actionSnapshot?: ActionConfig;
+  /** 节点媒体类型，根据 content 自动推导 */
+  mediaType?: NodeMediaType;
 }
 
 export type IdeaNode = Node<IdeaNodeData, 'ideaNode'>;
@@ -76,15 +80,34 @@ export interface ModelSlot {
   boundModelId?: string;   // 可选：默认绑定的模型 "<providerKey>/<modelName>"
 }
 
+export interface TriggerConstraint {
+  /** 约束标识，用于在 payload 中引用匹配的节点 */
+  id: string;
+  /** 接受的节点媒体类型 */
+  mediaType: 'text' | 'image' | 'mixed' | 'any';
+  /** 最少需要几个符合此约束的节点 */
+  min: number;
+  /** 最多需要几个（null = 无上限） */
+  max: number | null;
+  /** 描述，用于 UI 提示 */
+  description?: string;
+}
+
+export interface ActionTrigger {
+  /** 最少选中节点数（简化模式） */
+  minNodes: number;
+  /** 最多选中节点数（null = 无上限） */
+  maxNodes: number | null;
+  /** 约束组模式：精确声明输入要求（存在时优先于 minNodes/maxNodes） */
+  constraints?: TriggerConstraint[];
+}
+
 export interface ActionConfig {
   id: string;
   name: string;
   icon?: string;
   color?: string;
-  trigger: {
-    minNodes: number;
-    maxNodes: number | null;
-  };
+  trigger: ActionTrigger;
   processor: {
     type: 'llm' | 'code';
     payload: string;

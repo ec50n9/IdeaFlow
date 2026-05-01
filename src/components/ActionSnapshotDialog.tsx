@@ -3,13 +3,14 @@ import { useStore } from '@/store/useStore';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { ActionConfig } from '@/types';
+import { ActionConfig, ActionTrigger } from '@/types';
 import { ActionProcessorForm } from '@/components/ActionProcessorForm';
 import { v4 as uuidv4 } from 'uuid';
 import { PRESET_ACTION_COLORS, ACTION_DOT_CLASS, cn, getActionColorClasses } from '@/lib/utils';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { AlertCircle } from 'lucide-react';
+import { TriggerConfigForm } from '@/components/TriggerConfigForm';
 
 interface ActionSnapshotDialogProps {
   open: boolean;
@@ -34,8 +35,7 @@ export function ActionSnapshotDialog({
   // 转换模式下的编辑字段
   const [name, setName] = useState('');
   const [color, setColor] = useState('purple');
-  const [minNodes, setMinNodes] = useState(1);
-  const [maxNodes, setMaxNodes] = useState<number | null>(null);
+  const [trigger, setTrigger] = useState<ActionTrigger>({ minNodes: 1, maxNodes: null });
 
   // 可编辑的处理器配置（转换模式下允许修改）
   const [editableProcessor, setEditableProcessor] = useState<ActionConfig['processor']>({
@@ -56,8 +56,11 @@ export function ActionSnapshotDialog({
       if (displayAction) {
         setName(displayAction.name);
         setColor(displayAction.color || 'purple');
-        setMinNodes(displayAction.trigger.minNodes);
-        setMaxNodes(displayAction.trigger.maxNodes);
+        setTrigger({
+          minNodes: displayAction.trigger.minNodes,
+          maxNodes: displayAction.trigger.maxNodes ?? null,
+          constraints: displayAction.trigger.constraints,
+        });
         setEditableProcessor(displayAction.processor);
         setEditableOutput(displayAction.output);
       }
@@ -69,7 +72,7 @@ export function ActionSnapshotDialog({
       id: uuidv4(),
       name,
       color,
-      trigger: { minNodes, maxNodes },
+      trigger,
       processor: editableProcessor,
       output: editableOutput,
     };
@@ -175,29 +178,7 @@ export function ActionSnapshotDialog({
                     </Popover>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="flex flex-col gap-2">
-                      <Label>最少选中节点数</Label>
-                      <Input
-                        type="number"
-                        min={1}
-                        value={minNodes}
-                        onChange={(e) => setMinNodes(parseInt(e.target.value) || 1)}
-                      />
-                    </div>
-                    <div className="flex flex-col gap-2">
-                      <Label>最多选中节点数</Label>
-                      <Input
-                        type="number"
-                        placeholder="无限定"
-                        value={maxNodes === null ? '' : maxNodes}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setMaxNodes(val === '' ? null : parseInt(val));
-                        }}
-                      />
-                    </div>
-                  </div>
+                  <TriggerConfigForm trigger={trigger} onChange={setTrigger} />
                 </>
               )}
             </>

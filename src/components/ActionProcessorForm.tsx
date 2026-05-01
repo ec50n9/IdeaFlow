@@ -10,7 +10,7 @@ import {
 } from '@/components/ui/select';
 import { HelpCircle, Plus, Trash2, Copy, Check } from 'lucide-react';
 import { Label } from '@/components/ui/label';
-import { ActionConfig, CallMode, ModelSlot, ModelCapability } from '@/types';
+import { ActionConfig, CallMode, ModelSlot, ModelCapability, ActionTrigger } from '@/types';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { cn } from '@/lib/utils';
 import Editor from '@monaco-editor/react';
@@ -56,6 +56,18 @@ function getModelLabel(modelRef?: string): string {
   return `${provider.name} / ${model.model}`;
 }
 
+function getPlaceholderHint(processorType: 'llm' | 'code', trigger?: ActionTrigger): string {
+  if (processorType === 'code') return '可用变量: nodes, ai';
+
+  const base = '可用变量: {{selected_content}}, {{node_0}}';
+  if (!trigger?.constraints || trigger.constraints.length === 0) {
+    return base + ', 等';
+  }
+
+  const constraintHints = trigger.constraints.map((c) => `{{constraint.${c.id}}}`);
+  return `${base}, ${constraintHints.join(', ')}`;
+}
+
 interface CopyButtonProps {
   text: string;
 }
@@ -90,12 +102,13 @@ function CopyButton({ text }: CopyButtonProps) {
 interface ActionProcessorFormProps {
   processor: ActionConfig['processor'];
   output: ActionConfig['output'];
+  trigger?: ActionTrigger;
   onChange: (processor: ActionConfig['processor'], output: ActionConfig['output']) => void;
   onShowHelp?: () => void;
   disabled?: boolean;
 }
 
-export function ActionProcessorForm({ processor, output, onChange, onShowHelp, disabled }: ActionProcessorFormProps) {
+export function ActionProcessorForm({ processor, output, trigger, onChange, onShowHelp, disabled }: ActionProcessorFormProps) {
   const { providers } = useStore();
 
   useEffect(() => {
@@ -411,7 +424,7 @@ export function ActionProcessorForm({ processor, output, onChange, onShowHelp, d
             )}
           </span>
           <span className="text-muted-foreground text-xs font-normal">
-            {processor.type === 'llm' ? '可用变量: {{selected_content}}, {{node_0}}, 等' : '可用变量: nodes, ai'}
+            {getPlaceholderHint(processor.type, trigger)}
           </span>
         </Label>
         <div className="w-full max-w-full overflow-hidden border rounded-md h-[300px]">

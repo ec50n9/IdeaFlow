@@ -3,13 +3,14 @@ import { useStore } from '@/store/useStore';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { ActionConfig, IdeaNode } from '@/types';
+import { ActionConfig, IdeaNode, ActionTrigger } from '@/types';
 import { ActionProcessorForm } from '@/components/ActionProcessorForm';
 import { SlotResolveDialog } from '@/components/SlotResolveDialog';
 import { v4 as uuidv4 } from 'uuid';
 import { PRESET_ACTION_COLORS, ACTION_DOT_CLASS, cn } from '@/lib/utils';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { TriggerConfigForm } from '@/components/TriggerConfigForm';
 
 interface OneOffActionDialogProps {
   open: boolean;
@@ -34,8 +35,7 @@ export function OneOffActionDialog({ open, onOpenChange, selectedNodes, initialA
   // 转换为 Action 时的额外字段
   const [name, setName] = useState('次抛动作');
   const [color, setColor] = useState('slate');
-  const [minNodes, setMinNodes] = useState(1);
-  const [maxNodes, setMaxNodes] = useState<number | null>(null);
+  const [trigger, setTrigger] = useState<ActionTrigger>({ minNodes: 1, maxNodes: null });
 
   const [slotDialogOpen, setSlotDialogOpen] = useState(false);
   const [pendingAction, setPendingAction] = useState<ActionConfig | null>(null);
@@ -49,8 +49,11 @@ export function OneOffActionDialog({ open, onOpenChange, selectedNodes, initialA
         setOutput(initialAction.output);
         setName(initialAction.name || '次抛动作');
         setColor(initialAction.color || 'slate');
-        setMinNodes(initialAction.trigger?.minNodes ?? (selectedNodes.length || 1));
-        setMaxNodes(initialAction.trigger?.maxNodes ?? null);
+        setTrigger({
+          minNodes: initialAction.trigger?.minNodes ?? (selectedNodes.length || 1),
+          maxNodes: initialAction.trigger?.maxNodes ?? null,
+          constraints: initialAction.trigger?.constraints,
+        });
       } else {
         setProcessor({
           type: 'llm',
@@ -58,8 +61,7 @@ export function OneOffActionDialog({ open, onOpenChange, selectedNodes, initialA
         });
         setOutput({ connectionType: 'source_to_new' });
         setName('次抛动作');
-        setMinNodes(selectedNodes.length || 1);
-        setMaxNodes(null);
+        setTrigger({ minNodes: selectedNodes.length || 1, maxNodes: null });
         // 颜色默认分配一个未使用的
         const usedColors = new Set(useStore.getState().actions.map(a => a.color).filter(Boolean));
         const defaultColor = PRESET_ACTION_COLORS.find(c => !usedColors.has(c.name))?.name || 'purple';
@@ -73,7 +75,7 @@ export function OneOffActionDialog({ open, onOpenChange, selectedNodes, initialA
       id: 'one-off',
       name: '次抛',
       color: 'slate',
-      trigger: { minNodes: 1, maxNodes: null },
+      trigger,
       processor,
       output,
     };
@@ -87,7 +89,7 @@ export function OneOffActionDialog({ open, onOpenChange, selectedNodes, initialA
       id: uuidv4(),
       name,
       color,
-      trigger: { minNodes, maxNodes },
+      trigger,
       processor,
       output,
     };
@@ -107,6 +109,7 @@ export function OneOffActionDialog({ open, onOpenChange, selectedNodes, initialA
             <ActionProcessorForm
               processor={processor}
               output={output}
+              trigger={trigger}
               onChange={(p, o) => { if (!readOnly) { setProcessor(p); setOutput(o); } }}
               disabled={readOnly}
             />
@@ -158,29 +161,10 @@ export function OneOffActionDialog({ open, onOpenChange, selectedNodes, initialA
                   </Popover>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="flex flex-col gap-2">
-                    <Label>最少选中节点数</Label>
-                    <Input
-                      type="number"
-                      min={1}
-                      value={minNodes}
-                      onChange={e => setMinNodes(parseInt(e.target.value) || 1)}
-                    />
-                  </div>
-                  <div className="flex flex-col gap-2">
-                    <Label>最多选中节点数</Label>
-                    <Input
-                      type="number"
-                      placeholder="无限定"
-                      value={maxNodes === null ? '' : maxNodes}
-                      onChange={e => {
-                        const val = e.target.value;
-                        setMaxNodes(val === '' ? null : parseInt(val));
-                      }}
-                    />
-                  </div>
-                </div>
+                <TriggerConfigForm
+                  trigger={trigger}
+                  onChange={setTrigger}
+                />
               </>
             )}
 
