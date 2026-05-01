@@ -3,7 +3,7 @@ import { Handle, Position, NodeProps } from '@xyflow/react';
 import { AppNode, ActionNode, IdeaNode } from '@/types';
 import { useStore } from '@/store/useStore';
 import { getActionColorClasses, cn } from '@/lib/utils';
-import { Sparkles, Play, Copy, Pencil, Eye } from 'lucide-react';
+import { Sparkles, Play, Copy, Pencil, Eye, Trash2 } from 'lucide-react';
 import { matchTrigger } from '@/lib/triggerMatcher';
 import { Button } from '@/components/ui/button';
 import { ActionEditDialog } from '@/components/ActionEditDialog';
@@ -48,6 +48,10 @@ export const ActionNodeComponent = memo(({ id, data, selected }: NodeProps<Actio
     }
     setSlotDialogOpen(true);
   }, [sourceNodes, snapshot.trigger]);
+
+  const handleDelete = useCallback(() => {
+    useStore.getState().deleteNode(id);
+  }, [id]);
 
   return (
     <div
@@ -166,6 +170,16 @@ export const ActionNodeComponent = memo(({ id, data, selected }: NodeProps<Actio
           >
             <Copy className="w-3 h-3 mr-0.5" />
             克隆
+          </Button>
+
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 text-[10px] px-2 rounded-lg text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950"
+            onClick={handleDelete}
+          >
+            <Trash2 className="w-3 h-3 mr-0.5" />
+            删除
           </Button>
         </div>
       )}

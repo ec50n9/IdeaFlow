@@ -45,3 +45,10 @@ export const PRESET_ACTION_COLORS = [
   { name: 'indigo',  label: '靛蓝' },
   { name: 'pink',    label: '粉' },
 ]
+
+/** 判断元素是否为输入类元素（用于全局快捷键拦截） */
+export function isInputElement(el: HTMLElement | null): boolean {
+  if (!el) return false;
+  const tag = el.tagName.toLowerCase();
+  return tag === 'input' || tag === 'textarea' || el.isContentEditable;
+}

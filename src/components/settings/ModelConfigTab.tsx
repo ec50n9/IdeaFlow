@@ -95,10 +95,10 @@ export function ModelConfigTab() {
       <div className="flex flex-col gap-8 pb-20">
         {providers?.map(provider => (
           <div key={provider.id} className="group flex flex-col border rounded-3xl bg-card text-card-foreground shadow-sm hover:shadow-md transition-all hover:border-primary/30 relative overflow-hidden">
-            <div className="flex items-center justify-between bg-muted/30 px-6 py-4 border-b">
-               <div className="flex flex-col gap-1">
-                  <div className="font-semibold text-xl">{provider.name}</div>
-                  <div className="text-xs text-muted-foreground font-mono truncate max-w-md">API接口: {provider.endpoint || '默认'}</div>
+            <div className="flex items-center justify-between bg-muted/30 px-6 py-4 border-b gap-4">
+               <div className="flex flex-col gap-1 min-w-0 flex-1">
+                  <div className="font-semibold text-xl truncate">{provider.name}</div>
+                  <div className="text-xs text-muted-foreground font-mono truncate">API接口: {provider.endpoint || '默认'}</div>
                </div>
                <div className="flex gap-2 shrink-0">
                  <Button variant="secondary" size="sm" className="gap-1.5" onClick={() => setEditingProvider(provider)}>
@@ -147,7 +147,7 @@ export function ModelConfigTab() {
       </div>
 
       <Dialog open={!!editingProvider} onOpenChange={(open) => !open && setEditingProvider(null)}>
-        <DialogContent className="sm:max-w-[700px] gap-6 flex flex-col max-h-[85vh] overflow-hidden p-0">
+        <DialogContent className="sm:max-w-[700px] gap-6 flex flex-col max-h-[85dvh] overflow-hidden p-0">
           <DialogHeader className="px-6 py-4 border-b m-0 flex-none shrink-0 border-b relative">
             <DialogTitle>{isNewProvider ? '新建供应商配置' : '编辑供应商配置'}</DialogTitle>
           </DialogHeader>

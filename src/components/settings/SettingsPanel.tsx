@@ -76,7 +76,7 @@ export function SettingsPanel({ open, onOpenChange, defaultTab = 'actions' }: Se
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-background/95 backdrop-blur-lg flex flex-col md:flex-row animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 bg-background/95 backdrop-blur-lg flex flex-col md:flex-row animate-in fade-in duration-200 h-dvh">
       {/* Mobile Header + Tabs */}
       <div className="md:hidden flex-none bg-background/80 backdrop-blur-md border-b">
         <div className="flex items-center justify-between px-4 py-3">

@@ -3,7 +3,7 @@ import { Handle, Position, NodeProps } from '@xyflow/react';
 import { IdeaNodeData, IdeaNode } from '@/types';
 import Markdown from 'react-markdown';
 import { cn, getActionColorClasses } from '@/lib/utils';
-import { Edit3, User, X } from 'lucide-react';
+import { Edit3, User, X, Trash2 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { cancelTask } from '@/lib/engine';
 import { resolveImageUrl } from '@/lib/imageUtils';
@@ -62,8 +62,11 @@ export const IdeaNodeComponent = memo(({ id, data, selected }: NodeProps<IdeaNod
   const [content, setContent] = useState(data.content);
   const [editSize, setEditSize] = useState<{ width: number; height: number } | null>(null);
   const updateNodeData = useStore((state) => state.updateNodeData);
+  const deleteNode = useStore((state) => state.deleteNode);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const nodeRef = useRef<HTMLDivElement>(null);
+  const lastTouchTime = useRef<number>(0);
+  const lastTouchPos = useRef<{ x: number; y: number } | null>(null);
 
   const renderedMarkdown = useMemo(() => (
     <Markdown urlTransform={(value) => value} components={{ img: MarkdownImage as any }}>{data.content}</Markdown>
@@ -92,6 +95,26 @@ export const IdeaNodeComponent = memo(({ id, data, selected }: NodeProps<IdeaNod
       });
     }
     setIsEditing(true);
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    const touch = e.changedTouches[0];
+    const now = Date.now();
+    const timeDiff = now - lastTouchTime.current;
+
+    if (timeDiff < 300 && lastTouchPos.current) {
+      const dist = Math.hypot(
+        touch.clientX - lastTouchPos.current.x,
+        touch.clientY - lastTouchPos.current.y
+      );
+      if (dist < 20) {
+        e.stopPropagation();
+        handleDoubleClick();
+      }
+    }
+
+    lastTouchTime.current = now;
+    lastTouchPos.current = { x: touch.clientX, y: touch.clientY };
   };
 
   const handleBlur = () => {
@@ -130,6 +153,7 @@ export const IdeaNodeComponent = memo(({ id, data, selected }: NodeProps<IdeaNod
       )}
       style={isEditing && editSize ? { width: editSize.width, minHeight: editSize.height } : undefined}
       onDoubleClick={handleDoubleClick}
+      onTouchEnd={handleTouchEnd}
     >
       <Handle
         type="target"
@@ -196,6 +220,20 @@ export const IdeaNodeComponent = memo(({ id, data, selected }: NodeProps<IdeaNod
           </div>
         )}
       </div>
+
+      {/* Delete button */}
+      {selected && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            deleteNode(id);
+          }}
+          className="absolute -top-3 -right-3 z-10 w-6 h-6 rounded-full bg-red-500 text-white flex items-center justify-center shadow-sm border-2 border-background hover:bg-red-600 active:scale-95 transition-transform"
+          title="删除节点"
+        >
+          <Trash2 className="w-3 h-3" />
+        </button>
+      )}
 
       <div className="mt-2">
         {isEditing ? (

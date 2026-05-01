@@ -47,6 +47,7 @@ interface AppState {
 
   addNode: (node: AppNode) => void;
   updateNodeData: (id: string, data: Partial<AppNode['data']>) => void;
+  deleteNode: (id: string) => void;
   setNodes: (nodes: AppNode[]) => void;
   setEdges: (edges: Edge[]) => void;
 
@@ -173,6 +174,13 @@ export const useStore = create<AppState>()(
             }
             return node;
           }) as AppNode[],
+        });
+      },
+
+      deleteNode: (id: string) => {
+        set({
+          nodes: get().nodes.filter((n) => n.id !== id),
+          edges: get().edges.filter((e) => e.source !== id && e.target !== id),
         });
       },
 
