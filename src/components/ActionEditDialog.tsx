@@ -4,10 +4,51 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
+import { Copy, Check, X } from 'lucide-react';
 import { ActionProcessorForm } from '@/components/ActionProcessorForm';
 import { PRESET_ACTION_COLORS, ACTION_DOT_CLASS, cn } from '@/lib/utils';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { TriggerConfigForm } from '@/components/TriggerConfigForm';
+
+function CopyConfigButton({ config }: { config: ActionConfig }) {
+  const [copied, setCopied] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleCopy = async () => {
+    try {
+      setError(null);
+      const json = JSON.stringify(config, null, 2);
+      // 优先使用现代 Clipboard API，失败则回退到传统方法
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(json);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = json;
+        textarea.style.position = 'fixed';
+        textarea.style.left = '-9999px';
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        const success = document.execCommand('copy');
+        document.body.removeChild(textarea);
+        if (!success) throw new Error('execCommand copy failed');
+      }
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch (e) {
+      console.error('复制失败:', e);
+      setError('复制失败');
+      setTimeout(() => setError(null), 3000);
+    }
+  };
+
+  return (
+    <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground" onClick={handleCopy}>
+      {error ? <X className="w-4 h-4 text-destructive" /> : copied ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
+      <span>{error ? error : copied ? '已复制' : '复制配置'}</span>
+    </Button>
+  );
+}
 
 interface ActionEditDialogProps {
   open: boolean;
@@ -111,6 +152,7 @@ export function ActionEditDialog({ open, onOpenChange, action, onSave, isNew }: 
           />
 
           <div className="flex justify-end gap-2 mt-4">
+            <CopyConfigButton config={editingAction} />
             <Button variant="outline" onClick={() => onOpenChange(false)}>
               取消
             </Button>

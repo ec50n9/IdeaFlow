@@ -15,6 +15,7 @@ import {
 } from '@xyflow/react';
 import { AppNode, ActionConfig, AIModelConfig, AIProviderConfig, ActionTrigger } from '@/types';
 import { deriveMediaType } from '@/lib/triggerMatcher';
+import { getDefaultImagesSource } from '@/lib/processorInputs';
 import { v4 as uuidv4 } from 'uuid';
 
 function migrateTrigger(trigger: any): ActionTrigger {
@@ -249,7 +250,7 @@ export const useStore = create<AppState>()(
     }),
     {
       name: 'mindflow-storage',
-      version: 1,
+      version: 2,
       migrate: (persistedState: any, version) => {
         if (version < 1) {
           const state = persistedState as any;
@@ -258,6 +259,25 @@ export const useStore = create<AppState>()(
               ...action,
               trigger: migrateTrigger(action.trigger),
             }));
+          }
+        }
+        if (version < 2) {
+          const state = persistedState as any;
+          if (state.actions) {
+            state.actions = state.actions.map((action: any) => {
+              if (action.processor?.type === 'llm' && action.processor?.mode === 'editImage') {
+                return {
+                  ...action,
+                  processor: {
+                    ...action.processor,
+                    inputs: [
+                      { id: 'images', type: 'images', source: getDefaultImagesSource(action.trigger) },
+                    ],
+                  },
+                };
+              }
+              return action;
+            });
           }
         }
         return persistedState;

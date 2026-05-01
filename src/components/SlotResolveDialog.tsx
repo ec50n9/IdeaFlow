@@ -21,9 +21,11 @@ interface SlotResolveDialogProps {
   onOpenChange: (open: boolean) => void;
   action: ActionConfig | null;
   selectedNodes: IdeaNode[];
+  /** 执行流程被确认后触发（用于关闭外层弹窗） */
+  onExecuted?: () => void;
 }
 
-export function SlotResolveDialog({ open, onOpenChange, action, selectedNodes }: SlotResolveDialogProps) {
+export function SlotResolveDialog({ open, onOpenChange, action, selectedNodes, onExecuted }: SlotResolveDialogProps) {
   const [bindings, setBindings] = useState<Record<string, string>>({});
   const [executing, setExecuting] = useState(false);
 
@@ -83,6 +85,7 @@ export function SlotResolveDialog({ open, onOpenChange, action, selectedNodes }:
 
     setExecuting(true);
     onOpenChange(false);
+    onExecuted?.();
     await processAction(resolvedAction, selectedNodes);
   };
 

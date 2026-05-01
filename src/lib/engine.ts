@@ -6,6 +6,7 @@ import { buildLayout, releaseDirections, computeNodeGroup, computeNewNodePositio
 import { getAdapter, type OnChunk, TEXT_INSTRUCTION } from '@/lib/adapters';
 import { extractAndStoreImages, extractImageUrls } from '@/lib/imageUtils';
 import { buildConstraintMap, deriveMediaType } from '@/lib/triggerMatcher';
+import { resolveProcessorInputs, getDefaultImagesSource } from '@/lib/processorInputs';
 import { resolveSlot, getSlotRef, getModelsByCapability, capabilityLabel, getUnresolvedSlots, type UnresolvedSlot } from '@/lib/modelSlots';
 
 const taskRegistry = new Map<string, {
@@ -81,15 +82,6 @@ function resolveModel(modelRef?: string): { providerConfig: AIProviderConfig; mo
 // ─────────────────────────────────────────────────────────────
 // 图片提取
 // ─────────────────────────────────────────────────────────────
-
-async function extractImagesFromNodes(nodes: IdeaNode[]): Promise<string[]> {
-  const images: string[] = [];
-  for (const node of nodes) {
-    const nodeImages = await extractImageUrls(node.data.content);
-    images.push(...nodeImages);
-  }
-  return images;
-}
 
 async function processResultImages(results: any): Promise<any> {
   if (Array.isArray(results)) {
@@ -223,6 +215,7 @@ import ActionWorker from './actionWorker?worker';
 export async function executeWorkerCode(
   code: string,
   nodes: IdeaNode[],
+  inputs: Record<string, string | string[]>,
   slots: ModelSlot[],
   options?: { signal?: AbortSignal; onWorker?: (worker: Worker) => void; taskId?: string }
 ): Promise<any> {
@@ -277,7 +270,7 @@ export async function executeWorkerCode(
                 );
               }
             : undefined;
-          const result = await callAI(data.prompt, slot, { signal: options?.signal, onChunk, mode: data.mode });
+          const result = await callAI(data.prompt, slot, { signal: options?.signal, onChunk, mode: data.mode, images: data.images });
           worker.postMessage({ type: 'AI_RESULT', callId: data.callId, result });
         } catch (err: any) {
           worker.postMessage({ type: 'AI_RESULT', callId: data.callId, error: err.message });
@@ -296,7 +289,7 @@ export async function executeWorkerCode(
       reject(error);
     };
 
-    worker.postMessage({ code, nodes, messageId });
+    worker.postMessage({ code, nodes, messageId, inputs });
   });
 }
 
@@ -438,7 +431,21 @@ export async function processAction(action: ActionConfig, selectedNodes: IdeaNod
         }
       }
 
-      const images = await extractImagesFromNodes(selectedNodes);
+      // 解析处理器 inputs（显式声明的输入）
+      let resolvedInputs: Record<string, string | string[]> = {};
+      if (action.processor.inputs && action.processor.inputs.length > 0) {
+        resolvedInputs = await resolveProcessorInputs(
+          action.processor.inputs,
+          selectedNodes,
+          action.trigger
+        );
+      }
+
+      // 提取图片：仅使用显式声明的处理器 inputs
+      let images: string[] = [];
+      if (resolvedInputs['images'] && Array.isArray(resolvedInputs['images'])) {
+        images = resolvedInputs['images'] as string[];
+      }
 
       let mode: CallMode | undefined = action.processor.mode;
       if (!mode) {
@@ -459,8 +466,18 @@ export async function processAction(action: ActionConfig, selectedNodes: IdeaNod
         results = [{ content: `请求失败: ${msg}` }];
       }
     } else if (action.processor.type === 'code') {
+      // 解析处理器 inputs（Code 模式下可选）
+      let resolvedInputs: Record<string, string | string[]> = {};
+      if (action.processor.inputs && action.processor.inputs.length > 0) {
+        resolvedInputs = await resolveProcessorInputs(
+          action.processor.inputs,
+          selectedNodes,
+          action.trigger
+        );
+      }
+
       try {
-        results = await executeWorkerCode(action.processor.payload, selectedNodes, action.processor.slots || [], {
+        results = await executeWorkerCode(action.processor.payload, selectedNodes, resolvedInputs, action.processor.slots || [], {
           signal: abortController.signal,
           taskId,
           onWorker: (w) => {

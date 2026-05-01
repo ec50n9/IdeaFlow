@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useStore } from '@/store/useStore';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,7 +10,8 @@ import {
 } from '@/components/ui/select';
 import { HelpCircle, Plus, Trash2, Copy, Check } from 'lucide-react';
 import { Label } from '@/components/ui/label';
-import { ActionConfig, CallMode, ModelSlot, ModelCapability, ActionTrigger } from '@/types';
+import { ActionConfig, CallMode, ModelSlot, ModelCapability, ActionTrigger, ProcessorInput, ProcessorInputType } from '@/types';
+import { getDefaultImagesSource } from '@/lib/processorInputs';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { cn } from '@/lib/utils';
 import Editor from '@monaco-editor/react';
@@ -40,6 +41,33 @@ function getSlotModes(slot: { capability: ModelCapability }): CallMode[] {
 /** 空值占位符，用于 Select 组件支持"未选择"状态 */
 const NONE_VALUE = '__none__';
 
+const IMAGE_INPUT_ID = 'images';
+const IMAGE_INPUT_TYPE: ProcessorInputType = 'images';
+
+function isImageInput(input: ProcessorInput): boolean {
+  return input.id === IMAGE_INPUT_ID && input.type === IMAGE_INPUT_TYPE;
+}
+
+/**
+ * 根据目标 mode 构建处理器 inputs：
+ * - editImage 模式：确保包含 images 输入
+ * - 其他模式：移除 images 输入
+ */
+function buildProcessorInputsForMode(
+  currentInputs: ProcessorInput[] | undefined,
+  mode: CallMode,
+  trigger?: ActionTrigger
+): ProcessorInput[] | undefined {
+  const filtered = (currentInputs || []).filter((i) => !isImageInput(i));
+  if (mode === 'editImage') {
+    return [
+      ...filtered,
+      { id: IMAGE_INPUT_ID, type: IMAGE_INPUT_TYPE, source: getDefaultImagesSource(trigger) },
+    ];
+  }
+  return filtered.length > 0 ? filtered : undefined;
+}
+
 function getCapabilityLabel(capability: ModelCapability): string {
   return CAPABILITY_OPTIONS.find((o) => o.value === capability)?.label || capability;
 }
@@ -56,16 +84,32 @@ function getModelLabel(modelRef?: string): string {
   return `${provider.name} / ${model.model}`;
 }
 
-function getPlaceholderHint(processorType: 'llm' | 'code', trigger?: ActionTrigger): string {
-  if (processorType === 'code') return '可用变量: nodes, ai';
-
-  const base = '可用变量: {{selected_content}}, {{node_0}}';
-  if (!trigger || trigger.mode !== 'constraint' || trigger.constraints.length === 0) {
-    return base + ', 等';
+function getPlaceholderHint(
+  processorType: 'llm' | 'code',
+  trigger?: ActionTrigger,
+  inputs?: ProcessorInput[]
+): string {
+  if (processorType === 'code') {
+    const base = '可用变量: nodes, ai, resolveInput';
+    if (!inputs || inputs.length === 0) return base;
+    const inputHints = inputs.map((i) => `resolveInput("${i.id}")`);
+    return `${base} | ${inputHints.join(', ')}`;
   }
 
-  const constraintHints = trigger.constraints.map((c) => `{{constraint.${c.id}}}`);
-  return `${base}, ${constraintHints.join(', ')}`;
+  const base = '可用变量: {{selected_content}}, {{node_0}}';
+  let hints = base;
+
+  if (trigger?.mode === 'constraint' && trigger.constraints.length > 0) {
+    const constraintHints = trigger.constraints.map((c) => `{{constraint.${c.id}}}`);
+    hints += `, ${constraintHints.join(', ')}`;
+  }
+
+  if (inputs && inputs.length > 0) {
+    const inputHints = inputs.map((i) => `{{inputs.${i.id}}}`);
+    hints += ` | 输入: ${inputHints.join(', ')}`;
+  }
+
+  return hints;
 }
 
 interface CopyButtonProps {
@@ -183,6 +227,29 @@ export function ActionProcessorForm({ processor, output, trigger, onChange, onSh
   const selectedSlot = processor.type === 'llm'
     ? (slots[0] || undefined)
     : (processor.slotRef ? slots.find((s) => s.identifier === processor.slotRef) : undefined);
+
+  // 使用 ref 保存最新回调与状态，避免 useEffect 依赖不稳定引用
+  const processorRef = useRef(processor);
+  processorRef.current = processor;
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+  const outputRef = useRef(output);
+  outputRef.current = output;
+
+  // 自动设置/校正 mode：当 mode 未设置，或当前 mode 不被插槽支持时自动匹配
+  useEffect(() => {
+    const p = processorRef.current;
+    if (p.type !== 'llm' || !selectedSlot) return;
+    const supported = getSlotModes(selectedSlot);
+    const currentMode = p.mode;
+    const isCurrentModeValid = currentMode ? supported.includes(currentMode) : false;
+
+    if (isCurrentModeValid) return; // 当前 mode 有效，无需调整
+
+    const autoMode = supported[0];
+    const newInputs = buildProcessorInputsForMode(p.inputs, autoMode, trigger);
+    onChangeRef.current({ ...p, mode: autoMode, inputs: newInputs }, outputRef.current);
+  }, [selectedSlot?.capability, processor.type, processor.mode]);
 
   return (
     <div className="flex flex-col gap-5 overflow-x-hidden">
@@ -377,44 +444,75 @@ export function ActionProcessorForm({ processor, output, trigger, onChange, onSh
       {/* LLM 模式下的调用方式 */}
       {processor.type === 'llm' && selectedSlot && (() => {
         const supported = getSlotModes(selectedSlot);
-        if (supported.length <= 1) return null;
         return (
           <div className="flex flex-col gap-2 w-full max-w-full">
-            <Label>调用方式</Label>
-            <RadioGroup
-              value={processor.mode || supported[0]}
-              onValueChange={(value) => updateProcessor({ mode: value as CallMode })}
-              className="grid grid-cols-3 gap-2"
-            >
-              {MODE_OPTIONS.map((opt) => {
-                const isSupported = supported.includes(opt.value);
-                return (
-                  <label
-                    key={opt.value}
-                    className={`flex items-center gap-2 rounded-lg border px-3 py-2.5 text-sm cursor-pointer transition-all ${
-                      isSupported
-                        ? 'border-input bg-background hover:bg-muted/50 has-[[data-checked]]:border-primary has-[[data-checked]]:bg-primary/5 has-[[data-checked]]:ring-1 has-[[data-checked]]:ring-primary/20'
-                        : 'border-transparent opacity-50 cursor-not-allowed bg-muted/30'
-                    }`}
-                  >
-                    <RadioGroupItem
-                      value={opt.value}
-                      disabled={!isSupported || disabled}
-                      className="shrink-0"
-                    />
-                    <span className={isSupported ? 'text-foreground' : 'text-muted-foreground'}>
-                      {opt.label}
-                    </span>
-                  </label>
-                );
-              })}
-            </RadioGroup>
+            {supported.length > 1 && (
+              <>
+                <Label>调用方式</Label>
+                <RadioGroup
+                  value={processor.mode || supported[0]}
+                  onValueChange={(value) => {
+                    const newMode = value as CallMode;
+                    const newInputs = buildProcessorInputsForMode(processor.inputs, newMode, trigger);
+                    updateProcessor({ mode: newMode, inputs: newInputs });
+                  }}
+                  className="grid grid-cols-3 gap-2"
+                >
+                  {MODE_OPTIONS.map((opt) => {
+                    const isSupported = supported.includes(opt.value);
+                    return (
+                      <label
+                        key={opt.value}
+                        className={`flex items-center gap-2 rounded-lg border px-3 py-2.5 text-sm cursor-pointer transition-all ${
+                          isSupported
+                            ? 'border-input bg-background hover:bg-muted/50 has-[[data-checked]]:border-primary has-[[data-checked]]:bg-primary/5 has-[[data-checked]]:ring-1 has-[[data-checked]]:ring-primary/20'
+                            : 'border-transparent opacity-50 cursor-not-allowed bg-muted/30'
+                        }`}
+                      >
+                        <RadioGroupItem
+                          value={opt.value}
+                          disabled={!isSupported || disabled}
+                          className="shrink-0"
+                        />
+                        <span className={isSupported ? 'text-foreground' : 'text-muted-foreground'}>
+                          {opt.label}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </RadioGroup>
+              </>
+            )}
           </div>
         );
       })()}
 
+      {/* editImage 模式下显示处理器输入配置 */}
+      {processor.type === 'llm' && processor.mode === 'editImage' && (
+        <div className="flex flex-col gap-2 w-full max-w-full">
+          <Label className="text-xs text-muted-foreground">处理器输入</Label>
+          {processor.inputs?.filter(isImageInput).map((input) => (
+            <div key={input.id} className="flex items-center gap-2 p-3 border rounded-xl bg-muted/20">
+              <span className="text-sm font-medium w-14 shrink-0">{input.id}</span>
+              <Input
+                value={input.source}
+                onChange={(e) => {
+                  const newInputs = (processor.inputs || []).map((i) =>
+                    isImageInput(i) ? { ...i, source: e.target.value } : i
+                  );
+                  updateProcessor({ inputs: newInputs });
+                }}
+                placeholder="{{selected_nodes.images}}"
+                disabled={disabled}
+                className="h-8 text-sm"
+              />
+            </div>
+          ))}
+        </div>
+      )}
+
       <div className="flex flex-col gap-2 w-full max-w-full">
-        <Label className="flex flex-col items-start gap-1 sm:flex-row sm:items-center sm:justify-between w-full">
+        <Label className="flex flex-col items-start gap-1 w-full">
           <span className="flex items-center gap-1.5">
             {processor.type === 'llm' ? 'LLM 提示词模板' : '代码逻辑 (JS)'}
             {processor.type === 'code' && onShowHelp && (
@@ -424,7 +522,7 @@ export function ActionProcessorForm({ processor, output, trigger, onChange, onSh
             )}
           </span>
           <span className="text-muted-foreground text-xs font-normal">
-            {getPlaceholderHint(processor.type, trigger)}
+            {getPlaceholderHint(processor.type, trigger, processor.inputs)}
           </span>
         </Label>
         <div className="w-full max-w-full overflow-hidden border rounded-md h-[300px]">

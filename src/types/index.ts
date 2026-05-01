@@ -109,6 +109,19 @@ export interface ConstraintTrigger {
 
 export type ActionTrigger = SimpleTrigger | ConstraintTrigger;
 
+export type ProcessorInputType = 'text' | 'images';
+
+export interface ProcessorInput {
+  /** 参数标识，如 'images' */
+  id: string;
+  /** 数据类型 */
+  type: ProcessorInputType;
+  /** 源表达式（占位符语法），如 {{selected_nodes.images}} */
+  source: string;
+  /** 描述，用于 UI 提示 */
+  description?: string;
+}
+
 export interface ActionConfig {
   id: string;
   name: string;
@@ -118,6 +131,8 @@ export interface ActionConfig {
   processor: {
     type: 'llm' | 'code';
     payload: string;
+    /** 处理器输入声明 */
+    inputs?: ProcessorInput[];
     /** 此 action 声明的模型插槽列表（函数入参） */
     slots?: ModelSlot[];
     /** LLM 模式下默认使用的插槽 identifier（指向 slots 中的某一项） */

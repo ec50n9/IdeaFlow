@@ -193,6 +193,7 @@ export function OneOffActionDialog({ open, onOpenChange, selectedNodes, initialA
         onOpenChange={setSlotDialogOpen}
         action={pendingAction}
         selectedNodes={selectedNodes}
+        onExecuted={() => onOpenChange(false)}
       />
     </>
   );

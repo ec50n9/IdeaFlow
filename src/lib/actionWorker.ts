@@ -1,9 +1,9 @@
 self.onmessage = async (e) => {
-  const { code, nodes, messageId } = e.data;
+  const { code, nodes, messageId, inputs } = e.data;
 
   try {
     // create the ai function
-    const ai = (prompt: string, slotRef: string, mode?: string) => {
+    const ai = (prompt: string, slotRef: string, mode?: string, images?: string[]) => {
       return new Promise((resolve, reject) => {
         const callId = Math.random().toString(36).substring(7);
         const aiListener = (evt: MessageEvent) => {
@@ -17,14 +17,22 @@ self.onmessage = async (e) => {
           }
         };
         self.addEventListener('message', aiListener);
-        self.postMessage({ type: 'CALL_AI', prompt, callId, slotRef, mode });
+        self.postMessage({ type: 'CALL_AI', prompt, callId, slotRef, mode, images });
       });
     };
 
+    // resolveInput: 从主线程传入的已解析 inputs 中取值
+    const resolveInput = (id: string): string | string[] => {
+      if (!inputs || !(id in inputs)) {
+        throw new Error(`Input "${id}" 未在 Action 的「处理器输入」中声明，或解析失败。`);
+      }
+      return inputs[id];
+    };
+
     const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
-    const fn = new AsyncFunction('nodes', 'ai', code);
+    const fn = new AsyncFunction('nodes', 'ai', 'resolveInput', code);
     
-    let result = await fn(nodes, ai);
+    let result = await fn(nodes, ai, resolveInput);
     
     // Ensure format is compatible
     if (!Array.isArray(result)) {
