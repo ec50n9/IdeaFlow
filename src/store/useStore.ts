@@ -34,6 +34,7 @@ interface AppState {
   addAction: (action: ActionConfig) => void;
   updateAction: (id: string, action: Partial<ActionConfig>) => void;
   deleteAction: (id: string) => void;
+  syncActionNodes: (actionId: string, snapshot: ActionConfig) => void;
 
   addProvider: (provider: AIProviderConfig) => void;
   updateProvider: (id: string, provider: Partial<AIProviderConfig>) => void;
@@ -165,6 +166,24 @@ export const useStore = create<AppState>()(
         });
       },
 
+      syncActionNodes: (actionId: string, snapshot: ActionConfig) => {
+        set({
+          nodes: get().nodes.map((node) => {
+            if (node.type !== 'actionNode') return node;
+            if (node.data.actionSnapshot.id !== actionId) return node;
+            return {
+              ...node,
+              data: {
+                ...node.data,
+                actionSnapshot: snapshot,
+                actionName: snapshot.name,
+                actionColor: snapshot.color,
+              },
+            };
+          }),
+        });
+      },
+
       addProvider: (provider: AIProviderConfig) => {
         set({
           providers: [...get().providers, provider],
@@ -203,17 +222,26 @@ export const useStore = create<AppState>()(
       } as StateStorage)),
       partialize: (state) => ({
         actions: state.actions,
-        nodes: state.nodes.map((node) => ({
-          ...node,
-          data: {
-            ...node.data as any,
-            runningActions: [],
-            content: ((node.data as any).content || '').replace(
-              /data:image\/[^;]+;base64,[\sA-Za-z0-9+/=]+/g,
-              '[图片]'
-            ),
-          },
-        })) as AppNode[],
+        nodes: state.nodes.map((node) => {
+          const base = {
+            ...node,
+            data: { ...node.data },
+          };
+          if (node.type === 'ideaNode') {
+            return {
+              ...base,
+              data: {
+                ...node.data,
+                runningActions: [],
+                content: (typeof node.data.content === 'string' ? node.data.content : '').replace(
+                  /data:image\/[^;]+;base64,[\sA-Za-z0-9+/=]+/g,
+                  '[图片]'
+                ),
+              },
+            };
+          }
+          return base;
+        }),
         edges: state.edges,
         providers: state.providers,
         hasUserCreatedNode: state.hasUserCreatedNode,

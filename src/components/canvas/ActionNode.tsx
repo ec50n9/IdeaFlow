@@ -1,6 +1,6 @@
 import { memo, useState, useCallback, useMemo } from 'react';
 import { Handle, Position, NodeProps } from '@xyflow/react';
-import { ActionNode, IdeaNode } from '@/types';
+import { AppNode, ActionNode, IdeaNode } from '@/types';
 import { useStore } from '@/store/useStore';
 import { getActionColorClasses, cn } from '@/lib/utils';
 import { Sparkles, Play, Copy, Pencil, Eye } from 'lucide-react';
@@ -28,7 +28,7 @@ export const ActionNodeComponent = memo(({ id, data, selected }: NodeProps<Actio
     const sourceNodeIds = store.edges
       .filter((e) => e.target === id)
       .map((e) => e.source);
-    return store.nodes.filter((n) => sourceNodeIds.includes(n.id)) as IdeaNode[];
+    return store.nodes.filter((n): n is IdeaNode => sourceNodeIds.includes(n.id) && n.type === 'ideaNode');
   }, [id]);
 
   const handleModelSelect = useCallback(
@@ -62,11 +62,7 @@ export const ActionNodeComponent = memo(({ id, data, selected }: NodeProps<Actio
       if (existing) {
         store.updateAction(updatedAction.id, updatedAction);
       }
-      store.updateNodeData(id, {
-        actionSnapshot: updatedAction,
-        actionName: updatedAction.name,
-        actionColor: updatedAction.color,
-      });
+      store.syncActionNodes(updatedAction.id, updatedAction);
       setEditDialogOpen(false);
     },
     [id]

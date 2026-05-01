@@ -117,7 +117,7 @@ export function SlotResolveDialog({ open, onOpenChange, action, selectedNodes }:
                     {candidates.length > 0 ? (
                       <Select
                         value={bindings[slot.identifier] || NONE_VALUE}
-                        onValueChange={(value) => setBindings({ ...bindings, [slot.identifier]: value === NONE_VALUE ? '' : value })}
+                        onValueChange={(value) => setBindings({ ...bindings, [slot.identifier]: value === NONE_VALUE || value === null ? '' : value })}
                       >
                         <SelectTrigger className="w-full">
                           {(() => {

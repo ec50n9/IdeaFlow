@@ -224,7 +224,7 @@ export function ActionProcessorForm({ processor, output, onChange, onShowHelp, d
 
                   <Select
                     value={slots[0].boundModelId || NONE_VALUE}
-                    onValueChange={(value) => handleUpdateSlot(slots[0].identifier, { boundModelId: value === NONE_VALUE ? undefined : value })}
+                    onValueChange={(value) => handleUpdateSlot(slots[0].identifier, { boundModelId: value === NONE_VALUE || value === null ? undefined : value })}
                     disabled={disabled}
                   >
                     <SelectTrigger className="flex-1 min-w-[160px]">
@@ -309,7 +309,7 @@ export function ActionProcessorForm({ processor, output, onChange, onShowHelp, d
 
                     <Select
                       value={slot.boundModelId || NONE_VALUE}
-                      onValueChange={(value) => handleUpdateSlot(slot.identifier, { boundModelId: value === NONE_VALUE ? undefined : value })}
+                      onValueChange={(value) => handleUpdateSlot(slot.identifier, { boundModelId: value === NONE_VALUE || value === null ? undefined : value })}
                       disabled={disabled}
                     >
                       <SelectTrigger className="flex-1 min-w-[160px]">

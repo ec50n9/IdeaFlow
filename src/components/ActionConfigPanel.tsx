@@ -63,6 +63,7 @@ export function ActionConfigPanel() {
     const existing = actions.find(a => a.id === action.id);
     if (existing) {
       updateAction(action.id, action);
+      useStore.getState().syncActionNodes(action.id, action);
     } else {
       addAction(action);
     }

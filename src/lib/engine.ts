@@ -170,7 +170,7 @@ export async function callAI(
   }
 
   const adapter = getAdapter(modelConfig.protocol);
-  const hasImages = options?.images && options.images.length > 0;
+  const hasImages = !!(options?.images && options.images.length > 0);
   const mode = options?.mode || inferMode(modelConfig, hasImages);
 
   validateCapability(modelConfig, mode);

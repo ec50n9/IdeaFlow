@@ -25,7 +25,7 @@ export interface IdeaNodeData extends Record<string, unknown> {
   actionSnapshot?: ActionConfig;
 }
 
-export type IdeaNode = Node<IdeaNodeData>;
+export type IdeaNode = Node<IdeaNodeData, 'ideaNode'>;
 
 export interface ActionNodeData extends Record<string, unknown> {
   actionId: string;

@@ -317,7 +317,7 @@ export function AIModelConfigPanel() {
                                value={mod.imageModel || 'gpt-image-2'}
                                onValueChange={value => {
                                  const newModels = [...editingProvider.models];
-                                 newModels[index].imageModel = value;
+                                 newModels[index].imageModel = value ?? undefined;
                                  setEditingProvider({...editingProvider, models: newModels});
                                }}
                              >
