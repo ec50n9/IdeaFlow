@@ -35,7 +35,7 @@ export function ActionSnapshotDialog({
   // 转换模式下的编辑字段
   const [name, setName] = useState('');
   const [color, setColor] = useState('purple');
-  const [trigger, setTrigger] = useState<ActionTrigger>({ minNodes: 1, maxNodes: null });
+  const [trigger, setTrigger] = useState<ActionTrigger>({ mode: 'simple', minNodes: 1, maxNodes: null });
 
   // 可编辑的处理器配置（转换模式下允许修改）
   const [editableProcessor, setEditableProcessor] = useState<ActionConfig['processor']>({
@@ -56,11 +56,7 @@ export function ActionSnapshotDialog({
       if (displayAction) {
         setName(displayAction.name);
         setColor(displayAction.color || 'purple');
-        setTrigger({
-          minNodes: displayAction.trigger.minNodes,
-          maxNodes: displayAction.trigger.maxNodes ?? null,
-          constraints: displayAction.trigger.constraints,
-        });
+        setTrigger(displayAction.trigger);
         setEditableProcessor(displayAction.processor);
         setEditableOutput(displayAction.output);
       }

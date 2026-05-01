@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { Edge } from '@xyflow/react';
 import { IdeaNode, ActionNode } from '@/types';
+import { deriveMediaType } from '@/lib/triggerMatcher';
 import { BuildLayoutParams, BuildLayoutResult, Direction } from './types';
 import { inferTopology } from './topology';
 import {
@@ -149,13 +150,15 @@ export function buildLayout(params: BuildLayoutParams): BuildLayoutResult {
   // 4. 准备新节点骨架
   const newNodes: IdeaNode[] = results.map((res) => {
     const id = res.id || uuidv4();
+    const content = res.content || res.data?.content || '';
     return {
       id,
       type: res.type || 'ideaNode',
       ...res,
       position: res.position || { x: 0, y: 0 },
       data: {
-        content: res.content || res.data?.content || '',
+        content,
+        mediaType: res.data?.mediaType || deriveMediaType(content),
         ...res.data,
         ...sourceMeta,
         status: 'idle' as const,

@@ -93,14 +93,21 @@ export interface TriggerConstraint {
   description?: string;
 }
 
-export interface ActionTrigger {
-  /** 最少选中节点数（简化模式） */
+export interface SimpleTrigger {
+  mode: 'simple';
+  /** 最少选中节点数 */
   minNodes: number;
   /** 最多选中节点数（null = 无上限） */
   maxNodes: number | null;
-  /** 约束组模式：精确声明输入要求（存在时优先于 minNodes/maxNodes） */
-  constraints?: TriggerConstraint[];
 }
+
+export interface ConstraintTrigger {
+  mode: 'constraint';
+  /** 约束组：精确声明输入要求 */
+  constraints: TriggerConstraint[];
+}
+
+export type ActionTrigger = SimpleTrigger | ConstraintTrigger;
 
 export interface ActionConfig {
   id: string;

@@ -13,9 +13,26 @@ import {
   applyNodeChanges,
   applyEdgeChanges,
 } from '@xyflow/react';
-import { AppNode, ActionConfig, AIModelConfig, AIProviderConfig } from '@/types';
+import { AppNode, ActionConfig, AIModelConfig, AIProviderConfig, ActionTrigger } from '@/types';
 import { deriveMediaType } from '@/lib/triggerMatcher';
 import { v4 as uuidv4 } from 'uuid';
+
+function migrateTrigger(trigger: any): ActionTrigger {
+  if (trigger && trigger.mode) {
+    return trigger as ActionTrigger;
+  }
+  if (trigger && trigger.constraints && trigger.constraints.length > 0) {
+    return {
+      mode: 'constraint',
+      constraints: trigger.constraints,
+    };
+  }
+  return {
+    mode: 'simple',
+    minNodes: trigger?.minNodes ?? 1,
+    maxNodes: trigger?.maxNodes ?? null,
+  };
+}
 
 interface AppState {
   nodes: AppNode[];
@@ -56,7 +73,7 @@ const defaultActions: ActionConfig[] = [
     id: 'expand-idea',
     name: '多维展开',
     color: 'purple',
-    trigger: { minNodes: 1, maxNodes: 1 },
+    trigger: { mode: 'simple', minNodes: 1, maxNodes: 1 },
     processor: {
       type: 'llm',
       payload: '请基于以下内容，多维度展开想象，并拆分成3个独立的子观点。待处理内容：\n\n{{selected_content}}',
@@ -69,7 +86,7 @@ const defaultActions: ActionConfig[] = [
     id: 'translate-en',
     name: '翻译为英文',
     color: 'blue',
-    trigger: { minNodes: 1, maxNodes: 1 },
+    trigger: { mode: 'simple', minNodes: 1, maxNodes: 1 },
     processor: {
       type: 'llm',
       payload: '将以下内容翻译为纯正的英文：\n\n{{selected_content}}',
@@ -82,7 +99,7 @@ const defaultActions: ActionConfig[] = [
     id: 'summarize',
     name: '总结归纳',
     color: 'emerald',
-    trigger: { minNodes: 2, maxNodes: null },
+    trigger: { mode: 'simple', minNodes: 2, maxNodes: null },
     processor: {
       type: 'llm',
       payload: '请将以下多个观点总结融合为一个核心观点：\n\n{{selected_content}}',
@@ -232,6 +249,19 @@ export const useStore = create<AppState>()(
     }),
     {
       name: 'mindflow-storage',
+      version: 1,
+      migrate: (persistedState: any, version) => {
+        if (version < 1) {
+          const state = persistedState as any;
+          if (state.actions) {
+            state.actions = state.actions.map((action: any) => ({
+              ...action,
+              trigger: migrateTrigger(action.trigger),
+            }));
+          }
+        }
+        return persistedState;
+      },
       storage: createJSONStorage(() => ({
         getItem: (name) => localStorage.getItem(name) ?? null,
         setItem: (name, value) => {

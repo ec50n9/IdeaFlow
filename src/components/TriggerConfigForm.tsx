@@ -12,21 +12,20 @@ interface TriggerConfigFormProps {
 }
 
 export function TriggerConfigForm({ trigger, onChange, disabled }: TriggerConfigFormProps) {
-  const isConstraintMode = !!trigger.constraints;
+  const isConstraintMode = trigger.mode === 'constraint';
 
   const switchToSimple = () => {
-    onChange({
-      minNodes: trigger.minNodes,
-      maxNodes: trigger.maxNodes ?? null,
-    });
+    const minNodes = trigger.mode === 'constraint' ? 1 : trigger.minNodes;
+    const maxNodes = trigger.mode === 'constraint' ? null : trigger.maxNodes;
+    onChange({ mode: 'simple', minNodes, maxNodes });
   };
 
   const switchToConstraint = () => {
-    onChange({
-      minNodes: trigger.minNodes,
-      maxNodes: trigger.maxNodes,
-      constraints: trigger.constraints || [{ id: '输入', mediaType: 'any', min: 1, max: null }],
-    });
+    const constraints =
+      trigger.mode === 'constraint'
+        ? trigger.constraints
+        : [{ id: '输入', mediaType: 'any' as const, min: 1, max: null }];
+    onChange({ mode: 'constraint', constraints });
   };
 
   return (
@@ -103,7 +102,7 @@ export function TriggerConfigForm({ trigger, onChange, disabled }: TriggerConfig
       {/* 约束组模式 */}
       {isConstraintMode && (
         <div className="flex flex-col gap-3">
-          {trigger.constraints!.map((constraint, index) => (
+          {trigger.constraints.map((constraint, index) => (
             <div key={index} className="flex flex-col gap-2 p-3 border rounded-xl bg-muted/20">
               <div className="flex items-center gap-2">
                 <div className="flex-1 grid grid-cols-2 gap-2">
@@ -113,7 +112,7 @@ export function TriggerConfigForm({ trigger, onChange, disabled }: TriggerConfig
                       value={constraint.id}
                       disabled={disabled}
                       onChange={(e) => {
-                        const newConstraints = [...trigger.constraints!];
+                        const newConstraints = [...trigger.constraints];
                         newConstraints[index] = { ...constraint, id: e.target.value };
                         onChange({ ...trigger, constraints: newConstraints });
                       }}
@@ -127,8 +126,11 @@ export function TriggerConfigForm({ trigger, onChange, disabled }: TriggerConfig
                       value={constraint.mediaType}
                       disabled={disabled}
                       onChange={(e) => {
-                        const newConstraints = [...trigger.constraints!];
-                        newConstraints[index] = { ...constraint, mediaType: e.target.value as TriggerConstraint['mediaType'] };
+                        const newConstraints = [...trigger.constraints];
+                        newConstraints[index] = {
+                          ...constraint,
+                          mediaType: e.target.value as TriggerConstraint['mediaType'],
+                        };
                         onChange({ ...trigger, constraints: newConstraints });
                       }}
                       className="h-8 text-sm rounded-md border border-input bg-background px-2"
@@ -147,7 +149,7 @@ export function TriggerConfigForm({ trigger, onChange, disabled }: TriggerConfig
                     size="icon"
                     className="h-8 w-8 text-muted-foreground hover:text-destructive self-end"
                     onClick={() => {
-                      const newConstraints = trigger.constraints!.filter((_, i) => i !== index);
+                      const newConstraints = trigger.constraints.filter((_, i) => i !== index);
                       onChange({ ...trigger, constraints: newConstraints });
                     }}
                   >
@@ -164,7 +166,7 @@ export function TriggerConfigForm({ trigger, onChange, disabled }: TriggerConfig
                     disabled={disabled}
                     value={constraint.min}
                     onChange={(e) => {
-                      const newConstraints = [...trigger.constraints!];
+                      const newConstraints = [...trigger.constraints];
                       newConstraints[index] = { ...constraint, min: parseInt(e.target.value) || 0 };
                       onChange({ ...trigger, constraints: newConstraints });
                     }}
@@ -180,8 +182,11 @@ export function TriggerConfigForm({ trigger, onChange, disabled }: TriggerConfig
                     value={constraint.max === null ? '' : constraint.max}
                     onChange={(e) => {
                       const val = e.target.value;
-                      const newConstraints = [...trigger.constraints!];
-                      newConstraints[index] = { ...constraint, max: val === '' ? null : parseInt(val) };
+                      const newConstraints = [...trigger.constraints];
+                      newConstraints[index] = {
+                        ...constraint,
+                        max: val === '' ? null : parseInt(val),
+                      };
                       onChange({ ...trigger, constraints: newConstraints });
                     }}
                     className="h-8 text-sm"
@@ -193,8 +198,11 @@ export function TriggerConfigForm({ trigger, onChange, disabled }: TriggerConfig
                     value={constraint.description || ''}
                     disabled={disabled}
                     onChange={(e) => {
-                      const newConstraints = [...trigger.constraints!];
-                      newConstraints[index] = { ...constraint, description: e.target.value || undefined };
+                      const newConstraints = [...trigger.constraints];
+                      newConstraints[index] = {
+                        ...constraint,
+                        description: e.target.value || undefined,
+                      };
                       onChange({ ...trigger, constraints: newConstraints });
                     }}
                     className="h-8 text-sm"
@@ -212,14 +220,14 @@ export function TriggerConfigForm({ trigger, onChange, disabled }: TriggerConfig
               className="w-fit gap-1.5"
               onClick={() => {
                 const newConstraint: TriggerConstraint = {
-                  id: `输入${(trigger.constraints?.length || 0) + 1}`,
+                  id: `输入${trigger.constraints.length + 1}`,
                   mediaType: 'any',
                   min: 1,
                   max: null,
                 };
                 onChange({
                   ...trigger,
-                  constraints: [...(trigger.constraints || []), newConstraint],
+                  constraints: [...trigger.constraints, newConstraint],
                 });
               }}
             >

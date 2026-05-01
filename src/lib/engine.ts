@@ -5,7 +5,7 @@ import { Node, Edge } from '@xyflow/react';
 import { buildLayout, releaseDirections, computeNodeGroup, computeNewNodePositions } from '@/lib/layout';
 import { getAdapter, type OnChunk, TEXT_INSTRUCTION } from '@/lib/adapters';
 import { extractAndStoreImages, extractImageUrls } from '@/lib/imageUtils';
-import { buildConstraintMap } from '@/lib/triggerMatcher';
+import { buildConstraintMap, deriveMediaType } from '@/lib/triggerMatcher';
 import { resolveSlot, getSlotRef, getModelsByCapability, capabilityLabel, getUnresolvedSlots, type UnresolvedSlot } from '@/lib/modelSlots';
 
 const taskRegistry = new Map<string, {
@@ -407,7 +407,7 @@ export async function processAction(action: ActionConfig, selectedNodes: IdeaNod
       });
 
       // 处理约束组占位符（如果 action 声明了 constraints）
-      if (action.trigger.constraints && action.trigger.constraints.length > 0) {
+      if (action.trigger.mode === 'constraint' && action.trigger.constraints.length > 0) {
         const constraintMap = buildConstraintMap(selectedNodes, action.trigger.constraints);
         for (const [constraintId, nodes] of constraintMap) {
           const contents = nodes.map((n) => n.data.content);
@@ -538,7 +538,7 @@ export async function processOneOff(
     id: 'one-off',
     name: '次抛',
     color: 'slate',
-    trigger: { minNodes: 1, maxNodes: null },
+    trigger: { mode: 'simple', minNodes: 1, maxNodes: null },
     processor,
     output,
   };
@@ -567,6 +567,7 @@ function applyCustomGraphConfig(sourceNodes: IdeaNode[], config: any, sourceMeta
   const customNodes = rawNodes.map((n: any, i: number) => {
     const id = n.id || uuidv4();
     const pos = n.position || defaultPositions.get(tempIds[i]) || { x: 0, y: 0 };
+    const content = n.content || n.data?.content || '';
 
     return {
       id,
@@ -574,7 +575,8 @@ function applyCustomGraphConfig(sourceNodes: IdeaNode[], config: any, sourceMeta
       ...n,
       position: pos,
       data: {
-        content: n.content || n.data?.content || '',
+        content,
+        mediaType: n.data?.mediaType || deriveMediaType(content),
         ...n.data,
         ...sourceMeta,
         status: n.data?.status || n.status || 'idle',

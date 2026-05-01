@@ -4,6 +4,7 @@ import { AppNode, ActionNode, IdeaNode } from '@/types';
 import { useStore } from '@/store/useStore';
 import { getActionColorClasses, cn } from '@/lib/utils';
 import { Sparkles, Play, Copy, Pencil, Eye } from 'lucide-react';
+import { matchTrigger } from '@/lib/triggerMatcher';
 import { Button } from '@/components/ui/button';
 import { ActionEditDialog } from '@/components/ActionEditDialog';
 import { OneOffActionDialog } from '@/components/OneOffActionDialog';
@@ -41,8 +42,12 @@ export const ActionNodeComponent = memo(({ id, data, selected }: NodeProps<Actio
   );
 
   const handleRerun = useCallback(() => {
+    if (!matchTrigger(sourceNodes, snapshot.trigger)) {
+      alert('当前源节点不满足此动作的激活条件，无法重新运行');
+      return;
+    }
     setSlotDialogOpen(true);
-  }, []);
+  }, [sourceNodes, snapshot.trigger]);
 
   return (
     <div

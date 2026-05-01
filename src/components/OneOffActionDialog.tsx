@@ -35,7 +35,7 @@ export function OneOffActionDialog({ open, onOpenChange, selectedNodes, initialA
   // 转换为 Action 时的额外字段
   const [name, setName] = useState('次抛动作');
   const [color, setColor] = useState('slate');
-  const [trigger, setTrigger] = useState<ActionTrigger>({ minNodes: 1, maxNodes: null });
+  const [trigger, setTrigger] = useState<ActionTrigger>({ mode: 'simple', minNodes: 1, maxNodes: null });
 
   const [slotDialogOpen, setSlotDialogOpen] = useState(false);
   const [pendingAction, setPendingAction] = useState<ActionConfig | null>(null);
@@ -49,11 +49,7 @@ export function OneOffActionDialog({ open, onOpenChange, selectedNodes, initialA
         setOutput(initialAction.output);
         setName(initialAction.name || '次抛动作');
         setColor(initialAction.color || 'slate');
-        setTrigger({
-          minNodes: initialAction.trigger?.minNodes ?? (selectedNodes.length || 1),
-          maxNodes: initialAction.trigger?.maxNodes ?? null,
-          constraints: initialAction.trigger?.constraints,
-        });
+        setTrigger(initialAction.trigger);
       } else {
         setProcessor({
           type: 'llm',
@@ -61,7 +57,7 @@ export function OneOffActionDialog({ open, onOpenChange, selectedNodes, initialA
         });
         setOutput({ connectionType: 'source_to_new' });
         setName('次抛动作');
-        setTrigger({ minNodes: selectedNodes.length || 1, maxNodes: null });
+        setTrigger({ mode: 'simple', minNodes: selectedNodes.length || 1, maxNodes: null });
         // 颜色默认分配一个未使用的
         const usedColors = new Set(useStore.getState().actions.map(a => a.color).filter(Boolean));
         const defaultColor = PRESET_ACTION_COLORS.find(c => !usedColors.has(c.name))?.name || 'purple';

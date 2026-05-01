@@ -60,7 +60,7 @@ function getPlaceholderHint(processorType: 'llm' | 'code', trigger?: ActionTrigg
   if (processorType === 'code') return '可用变量: nodes, ai';
 
   const base = '可用变量: {{selected_content}}, {{node_0}}';
-  if (!trigger?.constraints || trigger.constraints.length === 0) {
+  if (!trigger || trigger.mode !== 'constraint' || trigger.constraints.length === 0) {
     return base + ', 等';
   }
 

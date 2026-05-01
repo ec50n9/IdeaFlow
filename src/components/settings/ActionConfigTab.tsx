@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Settings, Plus, Trash2, Pencil, HelpCircle } from 'lucide-react';
 import { capabilityLabel } from '@/lib/modelSlots';
 import { ActionConfig } from '@/types';
+import { formatTriggerDescription } from '@/lib/triggerMatcher';
 import { v4 as uuidv4 } from 'uuid';
 import { PRESET_ACTION_COLORS, ACTION_DOT_CLASS, cn } from '@/lib/utils';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -41,7 +42,7 @@ export function ActionConfigTab() {
       id: uuidv4(),
       name: '新动作',
       color: defaultColor,
-      trigger: { minNodes: 1, maxNodes: 1 },
+      trigger: { mode: 'simple', minNodes: 1, maxNodes: 1 },
       processor: {
         type: 'llm',
         payload: '提示词模板使用 {{selected_content}}'
@@ -95,7 +96,7 @@ export function ActionConfigTab() {
             </div>
             
             <div className="text-sm text-muted-foreground">
-              <p>触发条件: {action.trigger.minNodes} 到 {action.trigger.maxNodes === null ? '∞' : action.trigger.maxNodes} 个节点</p>
+              <p>触发条件: {formatTriggerDescription(action.trigger)}</p>
               <p>连线输出: {
                 action.output.connectionType === 'source_to_new' ? '源节点 -> 新节点' :
                 action.output.connectionType === 'new_to_source' ? '新节点 -> 源节点' : '无连线'
