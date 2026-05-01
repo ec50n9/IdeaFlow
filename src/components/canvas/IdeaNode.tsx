@@ -60,8 +60,10 @@ function areEqual(prev: NodeProps<IdeaNode>, next: NodeProps<IdeaNode>) {
 export const IdeaNodeComponent = memo(({ id, data, selected }: NodeProps<IdeaNode>) => {
   const [isEditing, setIsEditing] = useState(false);
   const [content, setContent] = useState(data.content);
+  const [editSize, setEditSize] = useState<{ width: number; height: number } | null>(null);
   const updateNodeData = useStore((state) => state.updateNodeData);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const nodeRef = useRef<HTMLDivElement>(null);
 
   const renderedMarkdown = useMemo(() => (
     <Markdown urlTransform={(value) => value} components={{ img: MarkdownImage as any }}>{data.content}</Markdown>
@@ -73,20 +75,28 @@ export const IdeaNodeComponent = memo(({ id, data, selected }: NodeProps<IdeaNod
 
   useEffect(() => {
     if (isEditing && textareaRef.current) {
-      textareaRef.current.focus();
-      textareaRef.current.setSelectionRange(
-        textareaRef.current.value.length,
-        textareaRef.current.value.length
-      );
+      const el = textareaRef.current;
+      el.focus();
+      el.setSelectionRange(el.value.length, el.value.length);
+      // 进入编辑时立即自适应高度，避免高度跳变
+      el.style.height = 'auto';
+      el.style.height = `${el.scrollHeight}px`;
     }
   }, [isEditing]);
 
   const handleDoubleClick = () => {
+    if (nodeRef.current) {
+      setEditSize({
+        width: nodeRef.current.offsetWidth,
+        height: nodeRef.current.offsetHeight,
+      });
+    }
     setIsEditing(true);
   };
 
   const handleBlur = () => {
     setIsEditing(false);
+    setEditSize(null);
     if (content !== data.content) {
       const updates: Partial<IdeaNodeData> = { content };
       if (data.sourceType === 'ai') {
@@ -100,6 +110,7 @@ export const IdeaNodeComponent = memo(({ id, data, selected }: NodeProps<IdeaNod
     if (e.key === 'Escape') {
       setContent(data.content); // Reset on escape
       setIsEditing(false);
+      setEditSize(null);
     }
   };
 
@@ -112,10 +123,12 @@ export const IdeaNodeComponent = memo(({ id, data, selected }: NodeProps<IdeaNod
 
   return (
     <div
+      ref={nodeRef}
       className={cn(
         "min-w-[250px] min-h-[100px] max-w-[400px] bg-card text-card-foreground p-4 rounded-xl border-2 shadow-sm transition-all duration-200",
         selected ? 'border-primary shadow-md ring-2 ring-primary/20' : 'border-border'
       )}
+      style={isEditing && editSize ? { width: editSize.width, minHeight: editSize.height } : undefined}
       onDoubleClick={handleDoubleClick}
     >
       <Handle
@@ -192,7 +205,7 @@ export const IdeaNodeComponent = memo(({ id, data, selected }: NodeProps<IdeaNod
           onChange={handleInput}
           onBlur={handleBlur}
           onKeyDown={handleKeyDown}
-          className="w-full bg-transparent outline-none resize-none overflow-hidden m-0 p-0 text-sm font-sans"
+          className="w-full bg-transparent outline-none resize-none overflow-hidden m-0 p-0 text-sm font-sans leading-relaxed"
           placeholder="在这里输入你的想法..."
           rows={Math.max(3, content.split('\n').length)}
         />
