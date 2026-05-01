@@ -252,38 +252,86 @@ export const useStore = create<AppState>()(
       name: 'mindflow-storage',
       version: 2,
       migrate: (persistedState: any, version) => {
-        if (version < 1) {
-          const state = persistedState as any;
-          if (state.actions) {
-            state.actions = state.actions.map((action: any) => ({
-              ...action,
-              trigger: migrateTrigger(action.trigger),
-            }));
-          }
-        }
-        if (version < 2) {
-          const state = persistedState as any;
-          if (state.actions) {
-            state.actions = state.actions.map((action: any) => {
-              if (action.processor?.type === 'llm' && action.processor?.mode === 'editImage') {
-                return {
+        try {
+          if (version < 1) {
+            const state = persistedState as any;
+            if (Array.isArray(state.actions)) {
+              state.actions = state.actions
+                .filter((action: any) => action && typeof action.id === 'string')
+                .map((action: any) => ({
                   ...action,
-                  processor: {
-                    ...action.processor,
-                    inputs: [
-                      { id: 'images', type: 'images', source: getDefaultImagesSource(action.trigger) },
-                    ],
-                  },
-                };
-              }
-              return action;
-            });
+                  trigger: migrateTrigger(action.trigger),
+                }));
+            }
           }
+          if (version < 2) {
+            const state = persistedState as any;
+            if (Array.isArray(state.actions)) {
+              state.actions = state.actions
+                .filter((action: any) => action && typeof action.id === 'string')
+                .map((action: any) => {
+                  if (action.processor?.type === 'llm' && action.processor?.mode === 'editImage') {
+                    return {
+                      ...action,
+                      processor: {
+                        ...action.processor,
+                        inputs: [
+                          { id: 'images', type: 'images', source: getDefaultImagesSource(action.trigger) },
+                        ],
+                      },
+                    };
+                  }
+                  return action;
+                });
+            }
+          }
+
+          // 通用数据净化：过滤掉明显损坏的节点和动作
+          const state = persistedState as any;
+          if (Array.isArray(state.actions)) {
+            state.actions = state.actions.filter(
+              (action: any) =>
+                action &&
+                typeof action.id === 'string' &&
+                typeof action.name === 'string' &&
+                action.trigger &&
+                action.processor &&
+                action.output
+            );
+          }
+          if (Array.isArray(state.nodes)) {
+            state.nodes = state.nodes.filter(
+              (node: any) =>
+                node &&
+                typeof node.id === 'string' &&
+                node.data &&
+                typeof node.data === 'object'
+            );
+          }
+          if (Array.isArray(state.edges)) {
+            state.edges = state.edges.filter(
+              (edge: any) =>
+                edge &&
+                typeof edge.id === 'string' &&
+                typeof edge.source === 'string' &&
+                typeof edge.target === 'string'
+            );
+          }
+
+          return persistedState;
+        } catch (e) {
+          console.error('Persisted state migration failed, resetting to defaults', e);
+          return {};
         }
-        return persistedState;
       },
       storage: createJSONStorage(() => ({
-        getItem: (name) => localStorage.getItem(name) ?? null,
+        getItem: (name) => {
+          try {
+            return localStorage.getItem(name) ?? null;
+          } catch {
+            return null;
+          }
+        },
         setItem: (name, value) => {
           try {
             localStorage.setItem(name, value);
@@ -291,7 +339,13 @@ export const useStore = create<AppState>()(
             console.warn('Persist failed: localStorage quota exceeded', e);
           }
         },
-        removeItem: (name) => localStorage.removeItem(name),
+        removeItem: (name) => {
+          try {
+            localStorage.removeItem(name);
+          } catch {
+            // ignore
+          }
+        },
       } as StateStorage)),
       partialize: (state) => ({
         actions: state.actions,
@@ -319,6 +373,40 @@ export const useStore = create<AppState>()(
         providers: state.providers,
         hasUserCreatedNode: state.hasUserCreatedNode,
       }),
+      onRehydrateStorage: () => {
+        return (state, error) => {
+          if (error) {
+            console.error('Storage rehydration failed, clearing corrupted data', error);
+            const flagKey = 'mindflow-recovery-attempted';
+            try {
+              if (sessionStorage.getItem(flagKey)) {
+                console.error('Auto-recovery already attempted once, stopping to prevent infinite loop');
+                return;
+              }
+              sessionStorage.setItem(flagKey, '1');
+              localStorage.removeItem('mindflow-storage');
+              window.location.reload();
+            } catch {
+              // ignore
+            }
+          }
+        };
+      },
     }
   )
 );
+
+window.__clearMindflowStorage = () => {
+  try {
+    localStorage.removeItem('mindflow-storage');
+    console.log('mindflow-storage cleared');
+  } catch {
+    console.error('Failed to clear mindflow-storage');
+  }
+};
+
+declare global {
+  interface Window {
+    __clearMindflowStorage?: () => void;
+  }
+}
