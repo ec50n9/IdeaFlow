@@ -3,7 +3,7 @@ import { Handle, Position, NodeProps } from '@xyflow/react';
 import { ActionNode, IdeaNode } from '@/types';
 import { useStore } from '@/store/useStore';
 import { getActionColorClasses, cn } from '@/lib/utils';
-import { Sparkles, Play, Copy, Pencil } from 'lucide-react';
+import { Sparkles, Play, Copy, Pencil, Eye } from 'lucide-react';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
 import { processAction } from '@/lib/engine';
@@ -15,9 +15,11 @@ export const ActionNodeComponent = memo(({ id, data, selected }: NodeProps<Actio
 
   const [rerunPopoverOpen, setRerunPopoverOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [viewDialogOpen, setViewDialogOpen] = useState(false);
   const [cloneDialogOpen, setCloneDialogOpen] = useState(false);
 
   const snapshot = data.actionSnapshot;
+  const isOneOff = snapshot.id === 'one-off';
   const slotRef = snapshot.processor.slotRef || snapshot.processor.slots?.[0]?.identifier;
   const currentSlot = snapshot.processor.slots?.find((s) => s.identifier === slotRef);
 
@@ -210,15 +212,27 @@ export const ActionNodeComponent = memo(({ id, data, selected }: NodeProps<Actio
             </PopoverContent>
           </Popover>
 
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-6 text-[10px] px-2 rounded-lg"
-            onClick={() => setEditDialogOpen(true)}
-          >
-            <Pencil className="w-3 h-3 mr-0.5" />
-            编辑
-          </Button>
+          {isOneOff ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-6 text-[10px] px-2 rounded-lg"
+              onClick={() => setViewDialogOpen(true)}
+            >
+              <Eye className="w-3 h-3 mr-0.5" />
+              查看
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-6 text-[10px] px-2 rounded-lg"
+              onClick={() => setEditDialogOpen(true)}
+            >
+              <Pencil className="w-3 h-3 mr-0.5" />
+              编辑
+            </Button>
+          )}
 
           <Button
             size="sm"
@@ -242,6 +256,14 @@ export const ActionNodeComponent = memo(({ id, data, selected }: NodeProps<Actio
         onOpenChange={setEditDialogOpen}
         action={snapshot}
         onSave={handleEditSave}
+      />
+
+      <OneOffActionDialog
+        open={viewDialogOpen}
+        onOpenChange={setViewDialogOpen}
+        selectedNodes={sourceNodes}
+        initialAction={snapshot}
+        readOnly
       />
 
       <OneOffActionDialog

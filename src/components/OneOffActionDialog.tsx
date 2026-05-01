@@ -18,9 +18,10 @@ interface OneOffActionDialogProps {
   onOpenChange: (open: boolean) => void;
   selectedNodes: IdeaNode[];
   initialAction?: ActionConfig;
+  readOnly?: boolean;
 }
 
-export function OneOffActionDialog({ open, onOpenChange, selectedNodes, initialAction }: OneOffActionDialogProps) {
+export function OneOffActionDialog({ open, onOpenChange, selectedNodes, initialAction, readOnly }: OneOffActionDialogProps) {
   const { addAction } = useStore();
   const [mode, setMode] = useState<'execute' | 'convert'>('execute');
 
@@ -108,14 +109,15 @@ export function OneOffActionDialog({ open, onOpenChange, selectedNodes, initialA
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="sm:max-w-[600px] gap-6 w-[90vw] overflow-x-hidden max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{mode === 'execute' ? '次抛调用' : '保存为动作'}</DialogTitle>
+            <DialogTitle>{readOnly ? '查看次抛' : mode === 'execute' ? '次抛调用' : '保存为动作'}</DialogTitle>
           </DialogHeader>
 
           <div className="flex flex-col gap-5 py-4 overflow-x-hidden">
             <ActionProcessorForm
               processor={processor}
               output={output}
-              onChange={(p, o) => { setProcessor(p); setOutput(o); }}
+              onChange={(p, o) => { if (!readOnly) { setProcessor(p); setOutput(o); } }}
+              disabled={readOnly}
             />
 
             {mode === 'convert' && (
@@ -192,7 +194,11 @@ export function OneOffActionDialog({ open, onOpenChange, selectedNodes, initialA
             )}
 
             <div className="flex justify-end gap-2 mt-4">
-              {mode === 'execute' ? (
+              {readOnly ? (
+                <Button variant="outline" onClick={() => setMode('convert')}>
+                  保存为动作...
+                </Button>
+              ) : mode === 'execute' ? (
                 <>
                   <Button variant="outline" onClick={() => setMode('convert')}>
                     保存为动作...
