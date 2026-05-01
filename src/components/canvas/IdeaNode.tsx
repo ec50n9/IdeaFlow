@@ -31,7 +31,7 @@ function MarkdownImage({ src, alt }: { src?: string; alt?: string }) {
     <img
       src={resolvedSrc}
       alt={alt || ''}
-      className="rounded-md max-h-[300px] object-contain"
+      className="rounded-md max-h-[300px] w-full object-contain"
       loading="lazy"
     />
   );
