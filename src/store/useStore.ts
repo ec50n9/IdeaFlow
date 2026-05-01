@@ -13,22 +13,22 @@ import {
   applyNodeChanges,
   applyEdgeChanges,
 } from '@xyflow/react';
-import { IdeaNode, ActionConfig, AIModelConfig, AIProviderConfig } from '@/types';
+import { AppNode, ActionConfig, AIModelConfig, AIProviderConfig } from '@/types';
 import { v4 as uuidv4 } from 'uuid';
 
 interface AppState {
-  nodes: IdeaNode[];
+  nodes: AppNode[];
   edges: Edge[];
   actions: ActionConfig[];
   providers: AIProviderConfig[];
 
-  onNodesChange: OnNodesChange<IdeaNode>;
+  onNodesChange: OnNodesChange<AppNode>;
   onEdgesChange: OnEdgesChange;
   onConnect: OnConnect;
 
-  addNode: (node: IdeaNode) => void;
-  updateNodeData: (id: string, data: Partial<IdeaNode['data']>) => void;
-  setNodes: (nodes: IdeaNode[]) => void;
+  addNode: (node: AppNode) => void;
+  updateNodeData: (id: string, data: Partial<AppNode['data']>) => void;
+  setNodes: (nodes: AppNode[]) => void;
   setEdges: (edges: Edge[]) => void;
 
   addAction: (action: ActionConfig) => void;
@@ -104,7 +104,7 @@ export const useStore = create<AppState>()(
       actions: defaultActions,
       providers: [],
 
-      onNodesChange: (changes: NodeChange<IdeaNode>[]) => {
+      onNodesChange: (changes: NodeChange<AppNode>[]) => {
         set({
           nodes: applyNodeChanges(changes, get().nodes),
         });
@@ -122,27 +122,27 @@ export const useStore = create<AppState>()(
         });
       },
 
-      addNode: (node: IdeaNode) => {
+      addNode: (node: AppNode) => {
         set({
           nodes: [...get().nodes, node],
         });
       },
 
-      updateNodeData: (id: string, data: Partial<IdeaNode['data']>) => {
+      updateNodeData: (id: string, data: Partial<AppNode['data']>) => {
         set({
           nodes: get().nodes.map((node) => {
             if (node.id === id) {
               return {
                 ...node,
                 data: { ...node.data, ...data },
-              };
+              } as AppNode;
             }
             return node;
-          }),
+          }) as AppNode[],
         });
       },
 
-      setNodes: (nodes: IdeaNode[]) => set({ nodes }),
+      setNodes: (nodes: AppNode[]) => set({ nodes }),
       setEdges: (edges: Edge[]) => set({ edges }),
 
       addAction: (action: ActionConfig) => {
@@ -206,14 +206,14 @@ export const useStore = create<AppState>()(
         nodes: state.nodes.map((node) => ({
           ...node,
           data: {
-            ...node.data,
+            ...node.data as any,
             runningActions: [],
-            content: node.data.content.replace(
+            content: ((node.data as any).content || '').replace(
               /data:image\/[^;]+;base64,[\sA-Za-z0-9+/=]+/g,
               '[图片]'
             ),
           },
-        })),
+        })) as AppNode[],
         edges: state.edges,
         providers: state.providers,
         hasUserCreatedNode: state.hasUserCreatedNode,

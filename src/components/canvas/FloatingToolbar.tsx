@@ -8,13 +8,13 @@ import { processAction } from '@/lib/engine';
 import { OneOffActionDialog } from '@/components/OneOffActionDialog';
 import { SlotResolveDialog } from '@/components/SlotResolveDialog';
 import { getUnresolvedSlots } from '@/lib/modelSlots';
-import { ActionConfig } from '@/types';
+import { ActionConfig, IdeaNode } from '@/types';
 import { ChevronDown } from 'lucide-react';
 
 export const FloatingToolbar = memo(() => {
   const { actions, nodes } = useStore();
 
-  const selectedNodes = nodes.filter((n) => n.selected);
+  const selectedNodes = nodes.filter((n) => n.selected && n.type === 'ideaNode') as IdeaNode[];
   const selectedCount = selectedNodes.length;
 
   const [dialogOpen, setDialogOpen] = useState(false);

@@ -1,11 +1,16 @@
 import { v4 as uuidv4 } from 'uuid';
 import { Edge } from '@xyflow/react';
-import { IdeaNode } from '@/types';
+import { IdeaNode, ActionNode } from '@/types';
 import { BuildLayoutParams, BuildLayoutResult, Direction } from './types';
 import { inferTopology } from './topology';
-import { computeNodeGroup, computeNewNodePositions } from './positioning';
+import {
+  computeNodeGroup,
+  computeNewNodePositions,
+  ACTION_NODE_WIDTH,
+  ACTION_NODE_HEIGHT,
+  GAP_BETWEEN_NODES,
+} from './positioning';
 export { computeNodeGroup, computeNewNodePositions };
-import { getHandlePair } from './handles';
 
 // ─────────────────────────────────────────────────────────────
 // 并发方向互斥
@@ -174,45 +179,122 @@ export function buildLayout(params: BuildLayoutParams): BuildLayoutResult {
     }
   }
 
-  // 6. 获取统一 Handle 对
-  const handlePair = getHandlePair(policy.direction, actionConnectionType);
+  // 6. 构建或复用 Action 中间节点
+  let actionNode: ActionNode;
 
-  // 7. 构建边
-  const newEdges: Edge[] = [];
-  if (actionConnectionType === 'source_to_new') {
-    for (const src of sourceNodes) {
-      for (const node of newNodes) {
-        newEdges.push({
-          id: `e-${src.id}-${node.id}`,
-          source: src.id,
-          target: node.id,
-          sourceHandle: handlePair.sourceHandle,
-          targetHandle: handlePair.targetHandle,
-          animated: true,
-        });
-      }
+  if (params.existingActionNodeId) {
+    const existing = params.existingNodes.find(
+      (n) => n.id === params.existingActionNodeId && n.type === 'actionNode'
+    ) as ActionNode | undefined;
+    if (existing) {
+      actionNode = existing;
+      actionNode.data = { ...actionNode.data, status: 'processing' as const };
+    } else {
+      actionNode = {
+        id: params.existingActionNodeId,
+        type: 'actionNode',
+        position: { x: 0, y: 0 },
+        data: {
+          actionId: params.actionConfig.id,
+          actionName: params.actionConfig.name,
+          actionColor: params.actionConfig.color,
+          actionSnapshot: params.actionConfig,
+          sourceSlot: sourceMeta.sourceSlot,
+          sourceProvider: sourceMeta.sourceProvider,
+          sourceModel: sourceMeta.sourceModel,
+          status: 'processing' as const,
+        },
+      };
     }
-  } else if (actionConnectionType === 'new_to_source') {
-    for (const node of newNodes) {
-      for (const src of sourceNodes) {
-        newEdges.push({
-          id: `e-${node.id}-${src.id}`,
-          source: node.id,
-          target: src.id,
-          sourceHandle: handlePair.sourceHandle,
-          targetHandle: handlePair.targetHandle,
-          animated: true,
-        });
-      }
+  } else {
+    actionNode = {
+      id: uuidv4(),
+      type: 'actionNode',
+      position: { x: 0, y: 0 },
+      data: {
+        actionId: params.actionConfig.id,
+        actionName: params.actionConfig.name,
+        actionColor: params.actionConfig.color,
+        actionSnapshot: params.actionConfig,
+        sourceSlot: sourceMeta.sourceSlot,
+        sourceProvider: sourceMeta.sourceProvider,
+        sourceModel: sourceMeta.sourceModel,
+        status: 'idle' as const,
+      },
+    };
+  }
+
+  switch (direction) {
+    case 'down':
+      actionNode.position = {
+        x: sourceGroup.center.x - ACTION_NODE_WIDTH / 2,
+        y: sourceGroup.bbox.maxY + GAP_BETWEEN_NODES,
+      };
+      break;
+    case 'up':
+      actionNode.position = {
+        x: sourceGroup.center.x - ACTION_NODE_WIDTH / 2,
+        y: sourceGroup.bbox.minY - GAP_BETWEEN_NODES - ACTION_NODE_HEIGHT,
+      };
+      break;
+    case 'right':
+      actionNode.position = {
+        x: sourceGroup.bbox.maxX + GAP_BETWEEN_NODES,
+        y: sourceGroup.center.y - ACTION_NODE_HEIGHT / 2,
+      };
+      break;
+    case 'left':
+      actionNode.position = {
+        x: sourceGroup.bbox.minX - GAP_BETWEEN_NODES - ACTION_NODE_WIDTH,
+        y: sourceGroup.center.y - ACTION_NODE_HEIGHT / 2,
+      };
+      break;
+  }
+
+  // 7. Handle 映射（基于几何方向）
+  const HANDLE_MAP: Record<Direction, { source: string; target: string }> = {
+    down:  { source: 'bottom-source', target: 'top-target' },
+    up:    { source: 'top-source',    target: 'bottom-target' },
+    right: { source: 'right-source',  target: 'left-target' },
+    left:  { source: 'left-source',   target: 'right-target' },
+  };
+  const handle = HANDLE_MAP[direction];
+
+  // 8. 构建边（source → action → result）
+  const newEdges: Edge[] = [];
+
+  // source → action（仅在新建 action 节点时添加）
+  if (!params.existingActionNodeId) {
+    for (const src of sourceNodes) {
+      newEdges.push({
+        id: `e-${src.id}-${actionNode.id}`,
+        source: src.id,
+        target: actionNode.id,
+        sourceHandle: handle.source,
+        targetHandle: handle.target,
+        animated: true,
+      });
     }
   }
 
-  // 8. 源节点状态清理
+  // action → result
+  for (const node of newNodes) {
+    newEdges.push({
+      id: `e-${actionNode.id}-${node.id}`,
+      source: actionNode.id,
+      target: node.id,
+      sourceHandle: handle.source,
+      targetHandle: handle.target,
+      animated: true,
+    });
+  }
+
+  // 9. 源节点状态清理
   const updatedSourceNodes = sourceNodes.map((src) => ({
     ...src,
     data: { ...src.data, status: 'idle' as const },
     selected: false,
   }));
 
-  return { newNodes, newEdges, updatedSourceNodes };
+  return { newNodes: [actionNode, ...newNodes], newEdges, updatedSourceNodes };
 }

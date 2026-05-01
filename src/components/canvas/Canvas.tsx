@@ -12,10 +12,12 @@ import '@xyflow/react/dist/style.css';
 
 import { useStore } from '@/store/useStore';
 import { IdeaNodeComponent } from './IdeaNode';
+import { ActionNodeComponent } from './ActionNode';
 import { v4 as uuidv4 } from 'uuid';
 
 const nodeTypes = {
   ideaNode: IdeaNodeComponent,
+  actionNode: ActionNodeComponent,
 };
 
 export const Canvas = () => {

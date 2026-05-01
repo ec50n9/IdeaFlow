@@ -1,10 +1,9 @@
 import { memo, useState, useRef, useEffect, useMemo } from 'react';
-import { ActionSnapshotDialog } from '@/components/ActionSnapshotDialog';
 import { Handle, Position, NodeProps } from '@xyflow/react';
 import { IdeaNodeData, IdeaNode } from '@/types';
 import Markdown from 'react-markdown';
 import { cn, getActionColorClasses } from '@/lib/utils';
-import { Sparkles, Edit3, User, X } from 'lucide-react';
+import { Edit3, User, X } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { cancelTask } from '@/lib/engine';
 import { resolveImageUrl } from '@/lib/imageUtils';
@@ -43,11 +42,6 @@ function areEqual(prev: NodeProps<IdeaNode>, next: NodeProps<IdeaNode>) {
   if (prev.selected !== next.selected) return false;
   if (prev.data.content !== next.data.content) return false;
   if (prev.data.sourceType !== next.data.sourceType) return false;
-  if (prev.data.sourceAction !== next.data.sourceAction) return false;
-  if (prev.data.sourceProvider !== next.data.sourceProvider) return false;
-  if (prev.data.sourceModel !== next.data.sourceModel) return false;
-  if (prev.data.sourceSlot !== next.data.sourceSlot) return false;
-  if (prev.data.sourceColor !== next.data.sourceColor) return false;
   if (prev.data.isEdited !== next.data.isEdited) return false;
   if (prev.data.status !== next.data.status) return false;
 
@@ -66,7 +60,6 @@ function areEqual(prev: NodeProps<IdeaNode>, next: NodeProps<IdeaNode>) {
 export const IdeaNodeComponent = memo(({ id, data, selected }: NodeProps<IdeaNode>) => {
   const [isEditing, setIsEditing] = useState(false);
   const [content, setContent] = useState(data.content);
-  const [snapshotOpen, setSnapshotOpen] = useState(false);
   const updateNodeData = useStore((state) => state.updateNodeData);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -176,30 +169,12 @@ export const IdeaNodeComponent = memo(({ id, data, selected }: NodeProps<IdeaNod
 
       {/* Meta tags */}
       <div className="absolute -top-3 left-3 flex gap-1 z-10 select-none">
-        {data.sourceType === 'ai' ? (
-          <button
-            type="button"
-            onClick={() => setSnapshotOpen(true)}
-            className={cn("group flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full shadow-sm border overflow-hidden cursor-pointer", getActionColorClasses(data.sourceColor))}
-          >
-            <Sparkles className="w-3 h-3 shrink-0" />
-            <span className="shrink-0">{data.sourceAction || 'AI 生成'}</span>
-            {(data.sourceModel || data.sourceSlot) && (
-              <span className="max-w-0 opacity-0 group-hover:max-w-[240px] group-hover:opacity-100 transition-all duration-300 ease-out whitespace-nowrap overflow-hidden">
-                <span className="opacity-70 ml-1 border-l pl-1 border-current">
-                  {data.sourceSlot && <span>{data.sourceSlot}</span>}
-                  {data.sourceSlot && data.sourceModel && <span className="mx-1 opacity-50">·</span>}
-                  {data.sourceModel && <span>{data.sourceProvider} - {data.sourceModel}</span>}
-                </span>
-              </span>
-            )}
-          </button>
-        ) : data.sourceType === 'manual' ? (
+        {data.sourceType === 'manual' && (
           <div className="flex items-center gap-1 bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300 text-[10px] font-medium px-2 py-0.5 rounded-full shadow-sm border border-blue-200 dark:border-blue-800">
             <User className="w-3 h-3" />
             <span>手动输入</span>
           </div>
-        ) : null}
+        )}
 
         {data.isEdited && (
           <div className="flex items-center gap-1 bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300 text-[10px] font-medium px-2 py-0.5 rounded-full shadow-sm border border-amber-200 dark:border-amber-800" title="该内容已被手动修改">
@@ -261,14 +236,7 @@ export const IdeaNodeComponent = memo(({ id, data, selected }: NodeProps<IdeaNod
           ))}
         </div>
       )}
-      <ActionSnapshotDialog
-        open={snapshotOpen}
-        onOpenChange={setSnapshotOpen}
-        actionId={data.actionId}
-        actionSnapshot={data.actionSnapshot}
-        sourceAction={data.sourceAction}
-        sourceColor={data.sourceColor}
-      />
+
     </div>
   );
 });

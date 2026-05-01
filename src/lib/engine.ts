@@ -1,4 +1,4 @@
-import { IdeaNode, ActionConfig, AIProviderConfig, AIModelConfig, ModelProtocol, CallMode, ModelSlot } from '@/types';
+import { AppNode, IdeaNode, ActionConfig, AIProviderConfig, AIModelConfig, ModelProtocol, CallMode, ModelSlot } from '@/types';
 import { v4 as uuidv4 } from 'uuid';
 import { useStore } from '@/store/useStore';
 import { Node, Edge } from '@xyflow/react';
@@ -36,12 +36,12 @@ function clearTask(taskId: string) {
           ...node,
           data: {
             ...node.data,
-            runningActions: (node.data.runningActions || []).filter((ra) => ra.taskId !== taskId),
+            runningActions: ((node.data as any).runningActions || []).filter((ra: any) => ra.taskId !== taskId),
           },
-        };
+        } as AppNode;
       }
       return node;
-    })
+    }) as AppNode[]
   );
 
   taskRegistry.delete(taskId);
@@ -263,16 +263,16 @@ export async function executeWorkerCode(
                         ...node,
                         data: {
                           ...node.data,
-                          runningActions: (node.data.runningActions || []).map((ra) =>
+                          runningActions: ((node.data as any).runningActions || []).map((ra: any) =>
                             ra.taskId === options.taskId
                               ? { ...ra, responseLength: accumulated.length }
                               : ra
                           ),
                         },
-                      };
+                      } as AppNode;
                     }
                     return node;
-                  })
+                  }) as AppNode[]
                 );
               }
             : undefined;
@@ -308,7 +308,8 @@ function commitLayout(
   sourceNodes: IdeaNode[],
   results: any[],
   sourceMeta: Record<string, any>,
-  taskId?: string
+  taskId?: string,
+  existingActionNodeId?: string
 ) {
   const store = useStore.getState();
   const { newNodes, newEdges, updatedSourceNodes } = buildLayout({
@@ -319,6 +320,8 @@ function commitLayout(
     existingNodes: store.nodes,
     existingEdges: store.edges,
     taskId,
+    actionConfig: action,
+    existingActionNodeId,
   });
 
   store.setNodes([
@@ -327,12 +330,12 @@ function commitLayout(
       return updated || node;
     }),
     ...newNodes,
-  ]);
+  ] as AppNode[]);
   store.setEdges([...store.edges, ...newEdges]);
 }
 
 // Execute an Action
-export async function processAction(action: ActionConfig, selectedNodes: IdeaNode[]) {
+export async function processAction(action: ActionConfig, selectedNodes: IdeaNode[], existingActionNodeId?: string) {
   const taskId = uuidv4();
   const abortController = new AbortController();
 
@@ -351,12 +354,12 @@ export async function processAction(action: ActionConfig, selectedNodes: IdeaNod
           ...node,
           data: {
             ...node.data,
-            runningActions: [...(node.data.runningActions || []), runningAction],
+            runningActions: [...((node.data as any).runningActions || []), runningAction],
           },
-        };
+        } as AppNode;
       }
       return node;
-    })
+    }) as AppNode[]
   );
 
   const createOnChunk = (tid: string) => (_chunk: string, accumulated: string) => {
@@ -368,14 +371,14 @@ export async function processAction(action: ActionConfig, selectedNodes: IdeaNod
             ...node,
             data: {
               ...node.data,
-              runningActions: (node.data.runningActions || []).map((ra) =>
+              runningActions: ((node.data as any).runningActions || []).map((ra: any) =>
                 ra.taskId === tid ? { ...ra, responseLength: accumulated.length } : ra
               ),
             },
-          };
+          } as AppNode;
         }
         return node;
-      })
+      }) as AppNode[]
     );
   };
 
@@ -459,7 +462,7 @@ export async function processAction(action: ActionConfig, selectedNodes: IdeaNod
 
       if (Array.isArray(results)) {
         if (results.length > 0) {
-          commitLayout(action, selectedNodes, results, sourceMeta, taskId);
+          commitLayout(action, selectedNodes, results, sourceMeta, taskId, existingActionNodeId);
         }
       } else if (typeof results === 'object') {
         if (results.nodes || results.edges) {
@@ -467,14 +470,14 @@ export async function processAction(action: ActionConfig, selectedNodes: IdeaNod
           applyCustomGraphConfig(selectedNodes, results, sourceMeta);
         } else if (results.content) {
           // Single object acting as a node payload
-          commitLayout(action, selectedNodes, [results], sourceMeta, taskId);
+          commitLayout(action, selectedNodes, [results], sourceMeta, taskId, existingActionNodeId);
         } else {
           // Fallback, treat it as empty or missing expected fields
-          commitLayout(action, selectedNodes, [results], sourceMeta, taskId);
+          commitLayout(action, selectedNodes, [results], sourceMeta, taskId, existingActionNodeId);
         }
       } else if (typeof results === 'string') {
         // Raw string
-        commitLayout(action, selectedNodes, [{ content: results }], sourceMeta, taskId);
+        commitLayout(action, selectedNodes, [{ content: results }], sourceMeta, taskId, existingActionNodeId);
       }
     }
   } catch (error) {
@@ -507,6 +510,64 @@ export async function processOneOff(
     output,
   };
   await processAction(tempAction, selectedNodes);
+}
+
+// ─────────────────────────────────────────────────────────────
+// 重新运行 Action（从已有 Action 节点触发）
+// ─────────────────────────────────────────────────────────────
+
+export async function reprocessAction(actionNodeId: string) {
+  const store = useStore.getState();
+  const actionNode = store.nodes.find(
+    (n) => n.id === actionNodeId && n.type === 'actionNode'
+  );
+  if (!actionNode) return;
+
+  // 收集源节点
+  const sourceNodeIds = store.edges
+    .filter((e) => e.target === actionNodeId)
+    .map((e) => e.source);
+  const sourceNodes = store.nodes.filter(
+    (n) => sourceNodeIds.includes(n.id)
+  ) as IdeaNode[];
+
+  if (sourceNodes.length === 0) return;
+
+  // 清除旧的输出边和结果节点
+  const outputEdgeIds = new Set(
+    store.edges.filter((e) => e.source === actionNodeId).map((e) => e.id)
+  );
+  const outputNodeIds = new Set(
+    store.edges
+      .filter((e) => e.source === actionNodeId)
+      .map((e) => e.target)
+  );
+
+  store.setNodes(store.nodes.filter((n) => !outputNodeIds.has(n.id)) as AppNode[]);
+  store.setEdges(store.edges.filter((e) => !outputEdgeIds.has(e.id)));
+
+  const action = (actionNode.data as any).actionSnapshot;
+  await processAction(action, sourceNodes, actionNodeId);
+}
+
+// ─────────────────────────────────────────────────────────────
+// 拷贝 Action 配置（保存为新的 ActionConfig）
+// ─────────────────────────────────────────────────────────────
+
+export function copyActionConfig(actionNodeId: string) {
+  const store = useStore.getState();
+  const actionNode = store.nodes.find(
+    (n) => n.id === actionNodeId && n.type === 'actionNode'
+  );
+  if (!actionNode) return;
+
+  const snapshot = (actionNode.data as any).actionSnapshot;
+  const newAction: ActionConfig = {
+    ...snapshot,
+    id: uuidv4(),
+    name: `${snapshot.name} 副本`,
+  };
+  store.addAction(newAction);
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -549,12 +610,12 @@ function applyCustomGraphConfig(sourceNodes: IdeaNode[], config: any, sourceMeta
   const customEdges = config.edges || [];
 
   store.setNodes([
-    ...store.nodes.map((node: IdeaNode) =>
+    ...store.nodes.map((node) =>
       sourceNodes.find((s) => s.id === node.id)
         ? { ...node, data: { ...node.data, status: 'idle' }, selected: false }
         : node
-    ),
-    ...customNodes,
+    ) as AppNode[],
+    ...customNodes as AppNode[],
   ]);
 
   store.setEdges([...store.edges, ...customEdges]);

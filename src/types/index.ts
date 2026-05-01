@@ -27,6 +27,21 @@ export interface IdeaNodeData extends Record<string, unknown> {
 
 export type IdeaNode = Node<IdeaNodeData>;
 
+export interface ActionNodeData extends Record<string, unknown> {
+  actionId: string;
+  actionName: string;
+  actionColor?: string;
+  actionSnapshot: ActionConfig;
+  sourceSlot?: string;
+  sourceProvider?: string;
+  sourceModel?: string;
+  status?: 'idle' | 'processing' | 'error';
+}
+
+export type ActionNode = Node<ActionNodeData, 'actionNode'>;
+
+export type AppNode = IdeaNode | ActionNode;
+
 export type ModelProtocol = 'openai' | 'openai-responses' | 'anthropic' | 'gemini' | 'generic';
 
 export type CallMode = 'chat' | 'generateImage' | 'editImage';

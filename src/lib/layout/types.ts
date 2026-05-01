@@ -1,5 +1,5 @@
 import { Edge } from '@xyflow/react';
-import { IdeaNode } from '@/types';
+import { IdeaNode, ActionConfig, AppNode } from '@/types';
 
 /** 空间方向 */
 export type Direction = 'up' | 'down' | 'left' | 'right';
@@ -43,14 +43,16 @@ export interface BuildLayoutParams {
   sourceNodes: IdeaNode[];
   results: any[];
   sourceMeta: Record<string, any>;
-  existingNodes: IdeaNode[];
+  existingNodes: AppNode[];
   existingEdges: Edge[];
   taskId?: string;
+  actionConfig: ActionConfig;
+  existingActionNodeId?: string;
 }
 
 /** 布局计算结果 */
 export interface BuildLayoutResult {
-  newNodes: IdeaNode[];
+  newNodes: AppNode[];
   newEdges: Edge[];
   updatedSourceNodes: IdeaNode[];
 }
