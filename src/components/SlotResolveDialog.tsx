@@ -29,7 +29,7 @@ export function SlotResolveDialog({ open, onOpenChange, action, selectedNodes }:
 
   const slots = useMemo(() => {
     return action ? getActionRequiredSlots(action) : [];
-  }, [action?.id]);
+  }, [action]);
 
   const slotCandidates = useMemo(() => {
     return slots.map((slot) => ({
