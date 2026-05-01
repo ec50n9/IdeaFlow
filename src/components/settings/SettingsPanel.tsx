@@ -36,6 +36,25 @@ export function SettingsPanel({ open, onOpenChange, defaultTab = 'models' }: Set
     }
   }, [onOpenChange]);
 
+  const renderNavButton = (item: typeof NAV_ITEMS[number], isActive: boolean, variant: 'sidebar' | 'mobile') => (
+    <button
+      key={item.id}
+      onClick={() => setActiveTab(item.id)}
+      className={cn(
+        'flex items-center gap-2 rounded-lg text-sm font-medium transition-colors shrink-0',
+        variant === 'sidebar'
+          ? 'px-3 py-2.5 text-left w-full'
+          : 'px-3 py-2 whitespace-nowrap',
+        isActive
+          ? 'bg-primary/10 text-primary'
+          : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+      )}
+    >
+      <item.icon className="w-4 h-4 shrink-0" />
+      {item.label}
+    </button>
+  );
+
   const renderContent = () => {
     switch (activeTab) {
       case 'models':
@@ -51,9 +70,22 @@ export function SettingsPanel({ open, onOpenChange, defaultTab = 'models' }: Set
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-none w-screen h-[100dvh] overflow-hidden p-0 m-0 rounded-none border-none bg-background/95 backdrop-blur-lg flex flex-row sm:max-w-none [&>button]:hidden gap-0">
-        {/* Sidebar */}
-        <div className="w-64 flex-none border-r bg-background/80 backdrop-blur-md flex flex-col">
+      <DialogContent className="max-w-none w-screen h-[100dvh] overflow-hidden p-0 m-0 rounded-none border-none bg-background/95 backdrop-blur-lg flex flex-col md:flex-row sm:max-w-none [&>button]:hidden gap-0">
+        {/* Mobile Header + Tabs */}
+        <div className="md:hidden flex-none bg-background/80 backdrop-blur-md border-b">
+          <div className="flex items-center justify-between px-4 py-3">
+            <h2 className="text-lg font-semibold tracking-tight">设置</h2>
+            <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 rounded-full" onClick={() => onOpenChange(false)}>
+              <X className="w-4 h-4" />
+            </Button>
+          </div>
+          <nav className="flex gap-1 px-3 pb-2 overflow-x-auto">
+            {NAV_ITEMS.map((item) => renderNavButton(item, activeTab === item.id, 'mobile'))}
+          </nav>
+        </div>
+
+        {/* Desktop Sidebar */}
+        <div className="hidden md:flex w-64 flex-none border-r bg-background/80 backdrop-blur-md flex-col">
           <div className="flex items-center justify-between p-4 border-b">
             <h2 className="text-lg font-semibold tracking-tight">设置</h2>
             <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 rounded-full" onClick={() => onOpenChange(false)}>
@@ -62,31 +94,13 @@ export function SettingsPanel({ open, onOpenChange, defaultTab = 'models' }: Set
           </div>
 
           <nav className="flex flex-col gap-1 p-3">
-            {NAV_ITEMS.map((item) => {
-              const Icon = item.icon;
-              const isActive = activeTab === item.id;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => setActiveTab(item.id)}
-                  className={cn(
-                    'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-left',
-                    isActive
-                      ? 'bg-primary/10 text-primary'
-                      : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-                  )}
-                >
-                  <Icon className="w-4 h-4 shrink-0" />
-                  {item.label}
-                </button>
-              );
-            })}
+            {NAV_ITEMS.map((item) => renderNavButton(item, activeTab === item.id, 'sidebar'))}
           </nav>
         </div>
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto">
-          <div className="w-full max-w-5xl mx-auto p-6 sm:p-10">
+          <div className="w-full max-w-5xl mx-auto p-4 sm:p-6 md:p-10">
             {renderContent()}
           </div>
         </div>
