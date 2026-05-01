@@ -33,15 +33,19 @@ export function buildExportPayload(
 }
 
 export function downloadJson(filename: string, data: unknown): void {
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  try {
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    throw new Error('导出数据序列化失败，可能包含循环引用或不可序列化对象');
+  }
 }
 
 export async function readJsonFile<T>(file: File): Promise<T> {
@@ -63,10 +67,58 @@ export async function readJsonFile<T>(file: File): Promise<T> {
 export function validateExportPayload(data: unknown): data is ExportPayload {
   if (typeof data !== 'object' || data === null) return false;
   const d = data as Record<string, unknown>;
-  if (!d.exportMeta || typeof (d.exportMeta as Record<string, unknown>).app !== 'string') return false;
+
+  const meta = d.exportMeta;
+  if (!meta || typeof meta !== 'object') return false;
+  const metaObj = meta as Record<string, unknown>;
+  if (metaObj.app !== 'IdeaFlow') return false;
+  if (typeof metaObj.version !== 'number') return false;
+  if (typeof metaObj.exportedAt !== 'string') return false;
+
   if (d.providers !== undefined && !Array.isArray(d.providers)) return false;
   if (d.actions !== undefined && !Array.isArray(d.actions)) return false;
+
   return true;
+}
+
+export function validateProvider(data: unknown): data is AIProviderConfig {
+  if (typeof data !== 'object' || data === null) return false;
+  const d = data as Record<string, unknown>;
+
+  if (typeof d.id !== 'string' || d.id.trim() === '') return false;
+  if (typeof d.name !== 'string' || d.name.trim() === '') return false;
+  if (typeof d.key !== 'string' || d.key.trim() === '') return false;
+  if (typeof d.apiKey !== 'string') return false;
+  if (!Array.isArray(d.models)) return false;
+
+  return true;
+}
+
+export function validateAction(data: unknown): data is ActionConfig {
+  if (typeof data !== 'object' || data === null) return false;
+  const d = data as Record<string, unknown>;
+
+  if (typeof d.id !== 'string' || d.id.trim() === '') return false;
+  if (typeof d.name !== 'string' || d.name.trim() === '') return false;
+  if (!d.trigger || typeof d.trigger !== 'object') return false;
+  if (!d.processor || typeof d.processor !== 'object') return false;
+  if (!d.output || typeof d.output !== 'object') return false;
+
+  const output = d.output as Record<string, unknown>;
+  const validConnectionTypes = ['source_to_new', 'new_to_source', 'none'];
+  if (typeof output.connectionType !== 'string' || !validConnectionTypes.includes(output.connectionType)) {
+    return false;
+  }
+
+  return true;
+}
+
+export function filterValidProviders(items: unknown[]): AIProviderConfig[] {
+  return items.filter(validateProvider) as AIProviderConfig[];
+}
+
+export function filterValidActions(items: unknown[]): ActionConfig[] {
+  return items.filter(validateAction) as ActionConfig[];
 }
 
 export function mergeProviders(

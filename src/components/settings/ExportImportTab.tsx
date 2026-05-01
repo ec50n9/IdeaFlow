@@ -4,21 +4,32 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Download, Upload, FileJson, AlertCircle, CheckCircle2 } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog';
 import {
   buildExportPayload,
   downloadJson,
   readJsonFile,
   validateExportPayload,
+  filterValidProviders,
+  filterValidActions,
   mergeProviders,
   mergeActions,
   ExportPayload,
 } from '@/lib/configExport';
 import { cn } from '@/lib/utils';
+import { Download, Upload, FileJson, AlertCircle, CheckCircle2 } from 'lucide-react';
 
 export function ExportImportTab() {
   const { providers, actions, setProviders, setActions } = useStore();
 
+  // ---- Export selection state ----
   const [selectedProviderIds, setSelectedProviderIds] = useState<Set<string>>(
     () => new Set(providers.map((p) => p.id))
   );
@@ -82,19 +93,25 @@ export function ExportImportTab() {
   };
 
   const handleExport = () => {
-    const exportedProviders = providers.filter((p) => selectedProviderIds.has(p.id));
-    const exportedActions = actions.filter((a) => selectedActionIds.has(a.id));
-    if (exportedProviders.length === 0 && exportedActions.length === 0) return;
-    const payload = buildExportPayload(exportedProviders, exportedActions);
-    const date = new Date().toISOString().slice(0, 10);
-    downloadJson(`ideaflow-config-${date}.json`, payload);
+    try {
+      const exportedProviders = providers.filter((p) => selectedProviderIds.has(p.id));
+      const exportedActions = actions.filter((a) => selectedActionIds.has(a.id));
+      if (exportedProviders.length === 0 && exportedActions.length === 0) return;
+      const payload = buildExportPayload(exportedProviders, exportedActions);
+      const date = new Date().toISOString().slice(0, 10);
+      downloadJson(`ideaflow-config-${date}.json`, payload);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : '导出失败');
+    }
   };
 
   const hasExportSelection = selectedProviderIds.size > 0 || selectedActionIds.size > 0;
 
+  // ---- Import state ----
   const [importPayload, setImportPayload] = useState<ExportPayload | null>(null);
-  const [importProviders, setImportProviders] = useState(true);
-  const [importActions, setImportActions] = useState(true);
+  const [importPreviewOpen, setImportPreviewOpen] = useState(false);
+  const [previewSelectedProviderIds, setPreviewSelectedProviderIds] = useState<Set<string>>(new Set());
+  const [previewSelectedActionIds, setPreviewSelectedActionIds] = useState<Set<string>>(new Set());
   const [importStrategy, setImportStrategy] = useState<'merge' | 'replace'>('merge');
   const [importError, setImportError] = useState<string | null>(null);
   const [importSuccess, setImportSuccess] = useState(false);
@@ -107,6 +124,9 @@ export function ExportImportTab() {
     setImportError(null);
     setImportSuccess(false);
     setImportPayload(null);
+    setImportPreviewOpen(false);
+    setPreviewSelectedProviderIds(new Set());
+    setPreviewSelectedActionIds(new Set());
 
     try {
       const data = await readJsonFile<unknown>(file);
@@ -114,13 +134,25 @@ export function ExportImportTab() {
         setImportError('无效的配置文件格式');
         return;
       }
-      if (!data.providers && !data.actions) {
-        setImportError('配置文件中未包含任何可导入的数据');
+
+      const validProviders = data.providers ? filterValidProviders(data.providers) : [];
+      const validActions = data.actions ? filterValidActions(data.actions) : [];
+
+      if (validProviders.length === 0 && validActions.length === 0) {
+        setImportError('配置文件中未包含有效的可导入数据');
         return;
       }
-      setImportPayload(data);
-      setImportProviders(!!data.providers);
-      setImportActions(!!data.actions);
+
+      const payload: ExportPayload = {
+        exportMeta: data.exportMeta,
+        ...(validProviders.length > 0 ? { providers: validProviders } : {}),
+        ...(validActions.length > 0 ? { actions: validActions } : {}),
+      };
+
+      setImportPayload(payload);
+      setPreviewSelectedProviderIds(new Set(validProviders.map((p) => p.id)));
+      setPreviewSelectedActionIds(new Set(validActions.map((a) => a.id)));
+      setImportPreviewOpen(true);
     } catch (err) {
       setImportError(err instanceof Error ? err.message : '文件读取失败');
     } finally {
@@ -128,25 +160,93 @@ export function ExportImportTab() {
     }
   };
 
-  const handleImport = () => {
+  const handleClosePreview = () => {
+    setImportPreviewOpen(false);
+    setImportPayload(null);
+    setPreviewSelectedProviderIds(new Set());
+    setPreviewSelectedActionIds(new Set());
+  };
+
+  const handleImportConfirm = () => {
     if (!importPayload) return;
     setImportError(null);
     setImportSuccess(false);
 
     try {
-      if (importProviders && importPayload.providers) {
-        const merged = mergeProviders(providers, importPayload.providers, importStrategy);
+      const providersToImport = importPayload.providers?.filter((p) =>
+        previewSelectedProviderIds.has(p.id)
+      ) ?? [];
+      const actionsToImport = importPayload.actions?.filter((a) =>
+        previewSelectedActionIds.has(a.id)
+      ) ?? [];
+
+      if (providersToImport.length > 0) {
+        const merged = mergeProviders(providers, providersToImport, importStrategy);
         setProviders(merged);
       }
-      if (importActions && importPayload.actions) {
-        const merged = mergeActions(actions, importPayload.actions, importStrategy);
+      if (actionsToImport.length > 0) {
+        const merged = mergeActions(actions, actionsToImport, importStrategy);
         setActions(merged);
       }
+
       setImportSuccess(true);
+      setImportPreviewOpen(false);
       setImportPayload(null);
+      setPreviewSelectedProviderIds(new Set());
+      setPreviewSelectedActionIds(new Set());
     } catch (err) {
       setImportError(err instanceof Error ? err.message : '导入失败');
     }
+  };
+
+  // ---- Import preview derived state ----
+  const previewProviders = importPayload?.providers ?? [];
+  const previewActions = importPayload?.actions ?? [];
+
+  const allPreviewProvidersSelected =
+    previewProviders.length > 0 && previewProviders.every((p) => previewSelectedProviderIds.has(p.id));
+  const somePreviewProvidersSelected =
+    previewProviders.some((p) => previewSelectedProviderIds.has(p.id)) && !allPreviewProvidersSelected;
+
+  const allPreviewActionsSelected =
+    previewActions.length > 0 && previewActions.every((a) => previewSelectedActionIds.has(a.id));
+  const somePreviewActionsSelected =
+    previewActions.some((a) => previewSelectedActionIds.has(a.id)) && !allPreviewActionsSelected;
+
+  const hasPreviewSelection = previewSelectedProviderIds.size > 0 || previewSelectedActionIds.size > 0;
+
+  const toggleAllPreviewProviders = () => {
+    if (allPreviewProvidersSelected) {
+      setPreviewSelectedProviderIds(new Set());
+    } else {
+      setPreviewSelectedProviderIds(new Set(previewProviders.map((p) => p.id)));
+    }
+  };
+
+  const togglePreviewProvider = (id: string) => {
+    setPreviewSelectedProviderIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAllPreviewActions = () => {
+    if (allPreviewActionsSelected) {
+      setPreviewSelectedActionIds(new Set());
+    } else {
+      setPreviewSelectedActionIds(new Set(previewActions.map((a) => a.id)));
+    }
+  };
+
+  const togglePreviewAction = (id: string) => {
+    setPreviewSelectedActionIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   };
 
   return (
@@ -176,7 +276,7 @@ export function ExportImportTab() {
                 <Checkbox
                   id="export-providers-all"
                   checked={allProvidersSelected}
-                  data-indeterminate={someProvidersSelected || undefined}
+                  indeterminate={someProvidersSelected}
                   onCheckedChange={toggleAllProviders}
                 />
                 <Label htmlFor="export-providers-all" className="cursor-pointer font-medium">
@@ -214,7 +314,7 @@ export function ExportImportTab() {
                 <Checkbox
                   id="export-actions-all"
                   checked={allActionsSelected}
-                  data-indeterminate={someActionsSelected || undefined}
+                  indeterminate={someActionsSelected}
                   onCheckedChange={toggleAllActions}
                 />
                 <Label htmlFor="export-actions-all" className="cursor-pointer font-medium">
@@ -277,16 +377,14 @@ export function ExportImportTab() {
           onChange={handleFileSelect}
         />
 
-        {!importPayload && (
-          <Button
-            variant="outline"
-            className="gap-2 w-full sm:w-auto self-start"
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <FileJson className="w-4 h-4" />
-            选择配置文件
-          </Button>
-        )}
+        <Button
+          variant="outline"
+          className="gap-2 w-full sm:w-auto self-start"
+          onClick={() => fileInputRef.current?.click()}
+        >
+          <FileJson className="w-4 h-4" />
+          选择配置文件
+        </Button>
 
         {importError && (
           <div className="flex items-center gap-2 text-destructive text-sm bg-destructive/10 p-3 rounded-lg">
@@ -301,46 +399,87 @@ export function ExportImportTab() {
             配置导入成功
           </div>
         )}
+      </div>
 
-        {importPayload && (
-          <div className="flex flex-col gap-6">
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <FileJson className="w-4 h-4" />
-              <span>
-                检测到配置文件（导出时间: {new Date(importPayload.exportMeta.exportedAt).toLocaleString('zh-CN')}）
-              </span>
-            </div>
+      {/* Import Preview Dialog */}
+      <Dialog open={importPreviewOpen} onOpenChange={(open) => {
+        if (!open) handleClosePreview();
+      }}>
+        <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>导入预览</DialogTitle>
+            <DialogDescription>
+              检测到配置文件（导出时间: {importPayload ? new Date(importPayload.exportMeta.exportedAt).toLocaleString('zh-CN') : ''}）
+            </DialogDescription>
+          </DialogHeader>
 
-            <div className="flex flex-col gap-4">
-              <p className="text-sm font-medium">选择要导入的内容</p>
-              {importPayload.providers && (
+          <div className="flex flex-col gap-6 py-2">
+            {/* Preview Providers */}
+            {previewProviders.length > 0 && (
+              <div className="flex flex-col gap-3">
                 <div className="flex items-center gap-3">
                   <Checkbox
-                    id="import-providers"
-                    checked={importProviders}
-                    onCheckedChange={(v) => setImportProviders(v === true)}
+                    id="preview-providers-all"
+                    checked={allPreviewProvidersSelected}
+                    indeterminate={somePreviewProvidersSelected}
+                    onCheckedChange={toggleAllPreviewProviders}
                   />
-                  <Label htmlFor="import-providers" className="cursor-pointer">
+                  <Label htmlFor="preview-providers-all" className="cursor-pointer font-medium">
                     模型配置
-                    <span className="text-muted-foreground text-xs ml-2">{importPayload.providers.length} 个供应商</span>
+                    <span className="text-muted-foreground text-xs ml-2">{previewProviders.length} 个供应商</span>
                   </Label>
                 </div>
-              )}
-              {importPayload.actions && (
+                <div className="ml-7 flex flex-col gap-2 border-l pl-4">
+                  {previewProviders.map((p) => (
+                    <div key={p.id} className="flex items-center gap-3">
+                      <Checkbox
+                        id={`preview-provider-${p.id}`}
+                        checked={previewSelectedProviderIds.has(p.id)}
+                        onCheckedChange={() => togglePreviewProvider(p.id)}
+                      />
+                      <Label htmlFor={`preview-provider-${p.id}`} className="cursor-pointer text-sm">
+                        {p.name}
+                        <span className="text-muted-foreground text-xs ml-2">{p.models.length} 个模型</span>
+                      </Label>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Preview Actions */}
+            {previewActions.length > 0 && (
+              <div className="flex flex-col gap-3">
                 <div className="flex items-center gap-3">
                   <Checkbox
-                    id="import-actions"
-                    checked={importActions}
-                    onCheckedChange={(v) => setImportActions(v === true)}
+                    id="preview-actions-all"
+                    checked={allPreviewActionsSelected}
+                    indeterminate={somePreviewActionsSelected}
+                    onCheckedChange={toggleAllPreviewActions}
                   />
-                  <Label htmlFor="import-actions" className="cursor-pointer">
+                  <Label htmlFor="preview-actions-all" className="cursor-pointer font-medium">
                     动作配置
-                    <span className="text-muted-foreground text-xs ml-2">{importPayload.actions.length} 个动作</span>
+                    <span className="text-muted-foreground text-xs ml-2">{previewActions.length} 个动作</span>
                   </Label>
                 </div>
-              )}
-            </div>
+                <div className="ml-7 flex flex-col gap-2 border-l pl-4">
+                  {previewActions.map((a) => (
+                    <div key={a.id} className="flex items-center gap-3">
+                      <Checkbox
+                        id={`preview-action-${a.id}`}
+                        checked={previewSelectedActionIds.has(a.id)}
+                        onCheckedChange={() => togglePreviewAction(a.id)}
+                      />
+                      <Label htmlFor={`preview-action-${a.id}`} className="cursor-pointer text-sm">
+                        {a.name}
+                      </Label>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
+            {/* Strategy */}
             <div className="flex flex-col gap-3">
               <p className="text-sm font-medium">导入策略</p>
               <RadioGroup
@@ -362,23 +501,23 @@ export function ExportImportTab() {
                 </div>
               </RadioGroup>
             </div>
-
-            <div className="flex gap-2 justify-end">
-              <Button variant="outline" onClick={() => setImportPayload(null)}>
-                取消
-              </Button>
-              <Button
-                onClick={handleImport}
-                disabled={!importProviders && !importActions}
-                className="gap-2"
-              >
-                <Upload className="w-4 h-4" />
-                确认导入
-              </Button>
-            </div>
           </div>
-        )}
-      </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={handleClosePreview}>
+              取消
+            </Button>
+            <Button
+              onClick={handleImportConfirm}
+              disabled={!hasPreviewSelection}
+              className="gap-2"
+            >
+              <Upload className="w-4 h-4" />
+              确认导入
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
