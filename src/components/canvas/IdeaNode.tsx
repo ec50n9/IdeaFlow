@@ -46,6 +46,7 @@ function areEqual(prev: NodeProps<IdeaNode>, next: NodeProps<IdeaNode>) {
   if (prev.data.sourceAction !== next.data.sourceAction) return false;
   if (prev.data.sourceProvider !== next.data.sourceProvider) return false;
   if (prev.data.sourceModel !== next.data.sourceModel) return false;
+  if (prev.data.sourceSlot !== next.data.sourceSlot) return false;
   if (prev.data.sourceColor !== next.data.sourceColor) return false;
   if (prev.data.isEdited !== next.data.isEdited) return false;
   if (prev.data.status !== next.data.status) return false;
@@ -183,10 +184,12 @@ export const IdeaNodeComponent = memo(({ id, data, selected }: NodeProps<IdeaNod
           >
             <Sparkles className="w-3 h-3 shrink-0" />
             <span className="shrink-0">{data.sourceAction || 'AI 生成'}</span>
-            {data.sourceModel && (
-              <span className="max-w-0 opacity-0 group-hover:max-w-[200px] group-hover:opacity-100 transition-all duration-300 ease-out whitespace-nowrap overflow-hidden">
+            {(data.sourceModel || data.sourceSlot) && (
+              <span className="max-w-0 opacity-0 group-hover:max-w-[240px] group-hover:opacity-100 transition-all duration-300 ease-out whitespace-nowrap overflow-hidden">
                 <span className="opacity-70 ml-1 border-l pl-1 border-current">
-                  {data.sourceProvider} - {data.sourceModel}
+                  {data.sourceSlot && <span>{data.sourceSlot}</span>}
+                  {data.sourceSlot && data.sourceModel && <span className="mx-1 opacity-50">·</span>}
+                  {data.sourceModel && <span>{data.sourceProvider} - {data.sourceModel}</span>}
                 </span>
               </span>
             )}

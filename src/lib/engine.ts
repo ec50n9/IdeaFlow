@@ -1,10 +1,11 @@
-import { IdeaNode, ActionConfig, AIProviderConfig, AIModelConfig, ModelProtocol, CallMode } from '@/types';
+import { IdeaNode, ActionConfig, AIProviderConfig, AIModelConfig, ModelProtocol, CallMode, ModelSlot } from '@/types';
 import { v4 as uuidv4 } from 'uuid';
 import { useStore } from '@/store/useStore';
 import { Node, Edge } from '@xyflow/react';
 import { buildLayout, releaseDirections, computeNodeGroup, computeNewNodePositions } from '@/lib/layout';
 import { getAdapter, type OnChunk, TEXT_INSTRUCTION } from '@/lib/adapters';
 import { extractAndStoreImages, extractImageUrls } from '@/lib/imageUtils';
+import { resolveSlot, getSlotRef, getModelsByCapability, capabilityLabel, getUnresolvedSlots, type UnresolvedSlot } from '@/lib/modelSlots';
 
 const taskRegistry = new Map<string, {
   abortController: AbortController;
@@ -47,12 +48,12 @@ function clearTask(taskId: string) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// 模型解析
+// 模型解析（底层）
 // ─────────────────────────────────────────────────────────────
 
 function resolveModel(modelRef?: string): { providerConfig: AIProviderConfig; modelConfig: AIModelConfig } {
   if (!modelRef) {
-    throw new Error('此动作未配置 AI 模型，请在动作配置中心选择模型。');
+    throw new Error('模型引用为空。');
   }
 
   const parts = modelRef.split('/');
@@ -159,10 +160,10 @@ export interface CallAIOptions {
 
 export async function callAI(
   prompt: string,
-  modelId?: string,
+  slot?: ModelSlot,
   options?: CallAIOptions
 ): Promise<any> {
-  const { providerConfig, modelConfig } = resolveModel(modelId);
+  const { providerConfig, modelConfig } = resolveSlot(slot);
 
   if (options?.signal?.aborted) {
     throw new DOMException('Aborted', 'AbortError');
@@ -221,6 +222,7 @@ import ActionWorker from './actionWorker?worker';
 export async function executeWorkerCode(
   code: string,
   nodes: IdeaNode[],
+  slots: ModelSlot[],
   options?: { signal?: AbortSignal; onWorker?: (worker: Worker) => void; taskId?: string }
 ): Promise<any> {
   return new Promise((resolve, reject) => {
@@ -248,6 +250,7 @@ export async function executeWorkerCode(
       const data = e.data;
       if (data.type === 'CALL_AI') {
         try {
+          const slot = slots.find((s) => s.identifier === data.slotRef);
           const onChunk = options?.taskId
             ? (_chunk: string, accumulated: string) => {
                 const store = useStore.getState();
@@ -273,7 +276,7 @@ export async function executeWorkerCode(
                 );
               }
             : undefined;
-          const result = await callAI(data.prompt, data.modelId, { signal: options?.signal, onChunk, mode: data.mode });
+          const result = await callAI(data.prompt, slot, { signal: options?.signal, onChunk, mode: data.mode });
           worker.postMessage({ type: 'AI_RESULT', callId: data.callId, result });
         } catch (err: any) {
           worker.postMessage({ type: 'AI_RESULT', callId: data.callId, error: err.message });
@@ -381,20 +384,18 @@ export async function processAction(action: ActionConfig, selectedNodes: IdeaNod
     let results: any = null;
     let providerName = '';
     let modelName = '';
+    let slotName = '';
 
     if (action.processor.type === 'llm') {
-      const freshStore = useStore.getState();
-      if (action.processor.modelId) {
-        const parts = action.processor.modelId.split('/');
-        if (parts.length === 2) {
-          const [pKey, mName] = parts;
-          const p = freshStore.providers.find((prov) => prov.key === pKey);
-          if (p) {
-            providerName = p.name;
-            modelName = mName;
-          }
-        }
+      const slot = getSlotRef(action);
+      if (!slot) {
+        throw new Error('此 LLM 动作未配置模型插槽，请在动作配置中添加插槽。');
       }
+
+      const resolved = resolveSlot(slot);
+      providerName = resolved.providerConfig.name;
+      modelName = resolved.modelConfig.model;
+      slotName = slot.identifier;
 
       let basePrompt = action.processor.payload.replace(/\{\{selected_content\}\}/g, combinedContent);
       selectedNodes.forEach((node, index) => {
@@ -404,17 +405,12 @@ export async function processAction(action: ActionConfig, selectedNodes: IdeaNod
       const images = await extractImagesFromNodes(selectedNodes);
 
       let mode: CallMode | undefined = action.processor.mode;
-      if (!mode && action.processor.modelId) {
-        try {
-          const { modelConfig } = resolveModel(action.processor.modelId);
-          mode = inferMode(modelConfig, images.length > 0);
-        } catch {
-          // 模型解析失败时留给 callAI 自行抛出错误
-        }
+      if (!mode) {
+        mode = inferMode(resolved.modelConfig, images.length > 0);
       }
 
       try {
-        results = await callAI(basePrompt, action.processor.modelId, {
+        results = await callAI(basePrompt, slot, {
           signal: abortController.signal,
           onChunk: createOnChunk(taskId),
           images: images.length > 0 ? images : undefined,
@@ -428,7 +424,7 @@ export async function processAction(action: ActionConfig, selectedNodes: IdeaNod
       }
     } else if (action.processor.type === 'code') {
       try {
-        results = await executeWorkerCode(action.processor.payload, selectedNodes, {
+        results = await executeWorkerCode(action.processor.payload, selectedNodes, action.processor.slots || [], {
           signal: abortController.signal,
           taskId,
           onWorker: (w) => {
@@ -455,6 +451,7 @@ export async function processAction(action: ActionConfig, selectedNodes: IdeaNod
         sourceAction: action.name,
         sourceProvider: providerName,
         sourceModel: modelName,
+        sourceSlot: slotName,
         sourceColor: action.color,
         actionId: action.id,
         actionSnapshot: action,
@@ -499,15 +496,14 @@ export async function processAction(action: ActionConfig, selectedNodes: IdeaNod
 export async function processOneOff(
   processor: ActionConfig['processor'],
   output: ActionConfig['output'],
-  selectedNodes: IdeaNode[],
-  promptText: string
+  selectedNodes: IdeaNode[]
 ) {
   const tempAction: ActionConfig = {
     id: 'one-off',
     name: '次抛',
     color: 'slate',
     trigger: { minNodes: 1, maxNodes: null },
-    processor: { ...processor, payload: promptText },
+    processor,
     output,
   };
   await processAction(tempAction, selectedNodes);

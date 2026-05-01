@@ -39,6 +39,7 @@ function getDefaultProtocol(): ModelProtocol {
 export function AIModelConfigPanel() {
   const { providers, addProvider, updateProvider, deleteProvider } = useStore();
   const [panelOpen, setPanelOpen] = useState(false);
+
   const [editingProvider, setEditingProvider] = useState<AIProviderConfig | null>(null);
 
   const handleAddNew = () => {

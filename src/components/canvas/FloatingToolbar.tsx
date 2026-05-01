@@ -6,6 +6,9 @@ import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover
 import { cn, getActionColorClasses } from '@/lib/utils';
 import { processAction } from '@/lib/engine';
 import { OneOffActionDialog } from '@/components/OneOffActionDialog';
+import { SlotResolveDialog } from '@/components/SlotResolveDialog';
+import { getUnresolvedSlots } from '@/lib/modelSlots';
+import { ActionConfig } from '@/types';
 import { ChevronDown } from 'lucide-react';
 
 export const FloatingToolbar = memo(() => {
@@ -17,6 +20,9 @@ export const FloatingToolbar = memo(() => {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [overflowOpen, setOverflowOpen] = useState(false);
   const hoverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [slotDialogOpen, setSlotDialogOpen] = useState(false);
+  const [pendingAction, setPendingAction] = useState<ActionConfig | null>(null);
 
   const openMenu = () => {
     if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
@@ -43,10 +49,20 @@ export const FloatingToolbar = memo(() => {
 
   const selectedNodeIds = selectedNodes.map((n) => n.id);
 
+  const handleExecuteAction = (action: ActionConfig) => {
+    const unresolved = getUnresolvedSlots(action);
+    if (unresolved.length > 0) {
+      setPendingAction(action);
+      setSlotDialogOpen(true);
+      return;
+    }
+    processAction(action, selectedNodes);
+  };
+
   return (
-    <NodeToolbar 
-      nodeId={selectedNodeIds} 
-      position={Position.Top} 
+    <NodeToolbar
+      nodeId={selectedNodeIds}
+      position={Position.Top}
       isVisible={true}
       offset={15}
     >
@@ -59,7 +75,7 @@ export const FloatingToolbar = memo(() => {
               "rounded-full flex items-center gap-1.5 font-medium shadow-sm hover:shadow-md transition-all border text-xs px-3 py-1 h-auto",
               getActionColorClasses(action.color)
             )}
-            onClick={() => processAction(action, selectedNodes)}
+            onClick={() => handleExecuteAction(action)}
           >
             {action.name}
           </Button>
@@ -98,7 +114,7 @@ export const FloatingToolbar = memo(() => {
                     getActionColorClasses(action.color)
                   )}
                   onClick={() => {
-                    processAction(action, selectedNodes);
+                    handleExecuteAction(action);
                     setOverflowOpen(false);
                   }}
                 >
@@ -124,9 +140,14 @@ export const FloatingToolbar = memo(() => {
         onOpenChange={setDialogOpen}
         selectedNodes={selectedNodes}
       />
+      <SlotResolveDialog
+        open={slotDialogOpen}
+        onOpenChange={setSlotDialogOpen}
+        action={pendingAction}
+        selectedNodes={selectedNodes}
+      />
     </NodeToolbar>
   );
 });
 
 FloatingToolbar.displayName = 'FloatingToolbar';
-

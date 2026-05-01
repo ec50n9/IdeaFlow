@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { useStore } from '@/store/useStore';
 import { Button } from '@/components/ui/button';
 import { Settings, Plus, Trash2, Pencil, X, HelpCircle } from 'lucide-react';
-import { ActionProcessorForm, getCapabilityLabels } from '@/components/ActionProcessorForm';
+import { ActionProcessorForm } from '@/components/ActionProcessorForm';
+import { capabilityLabel } from '@/lib/modelSlots';
 import { Input } from '@/components/ui/input';
 
 import { Label } from '@/components/ui/label';
@@ -14,6 +15,14 @@ import { cn } from '@/lib/utils';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 
+function getCapabilityLabels(model: { supportsText: boolean; supportsTextToImage: boolean; supportsImageToImage: boolean }): string[] {
+  const labels: string[] = [];
+  if (model.supportsText) labels.push('文生文');
+  if (model.supportsTextToImage) labels.push('文生图');
+  if (model.supportsImageToImage) labels.push('图生图');
+  return labels;
+}
+
 
 
 export function ActionConfigPanel() {
@@ -22,18 +31,17 @@ export function ActionConfigPanel() {
   const [editingAction, setEditingAction] = useState<ActionConfig | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
 
-  // Helper to get model details
-  const getModelLabel = (modelRef?: string) => {
-    if (!modelRef) return "未配置模型";
-    const parts = modelRef.split('/');
-    if (parts.length !== 2) return "未知模型";
-    const [pKey, mName] = parts;
-    const p = providers?.find(prov => prov.key === pKey);
-    if (!p) return "未知供应商";
-    const m = p.models.find(mod => mod.model === mName);
-    if (!m) return "未知模型";
-    const caps = getCapabilityLabels(m).join(', ');
-    return `${p.name} - ${m.model} (${caps})`;
+  // Helper to get slot details from action's own slots
+  const getSlotLabel = (action: ActionConfig) => {
+    const slots = action.processor.slots || [];
+    if (action.processor.type === 'llm') {
+      const slot = slots[0];
+      if (!slot) return "未配置插槽";
+      return `${slot.identifier} (${capabilityLabel(slot.capability)})`;
+    }
+    // Code 模式显示所有声明的插槽
+    if (slots.length === 0) return "未配置插槽";
+    return slots.map(s => `${s.identifier} (${capabilityLabel(s.capability)})`).join(', ');
   };
 
   const handleAddNew = () => {
@@ -108,7 +116,7 @@ export function ActionConfigPanel() {
                       action.output.connectionType === 'new_to_source' ? '新节点 -> 源节点' : '无连线'
                     }</p>
                     {action.processor.type === 'llm' && (
-                      <p>AI模型: {getModelLabel(action.processor.modelId)}</p>
+                      <p>模型插槽: {getSlotLabel(action)}</p>
                     )}
                   </div>
                   
@@ -263,18 +271,18 @@ export function ActionConfigPanel() {
             </div>
 
             <div className="flex flex-col gap-2">
-              <h3 className="font-semibold text-base">入参方法: ai(prompt: string, modelId: string, mode?: string)</h3>
-              <p className="text-muted-foreground">调用大模型（处理核心逻辑），传入 prompt、模型 ID（可在模型配置中复制）和可选的调用方式 mode（"chat" | "generateImage" | "editImage"），等待返回。</p>
+              <h3 className="font-semibold text-base">入参方法: ai(prompt: string, slotIdentifier: string, mode?: string)</h3>
+              <p className="text-muted-foreground">调用大模型（处理核心逻辑），传入 prompt、模型插槽标识（需在「模型插槽」区域配置的标识）和可选的调用方式 mode（"chat" | "generateImage" | "editImage"），等待返回。</p>
               <pre className="bg-muted/50 p-4 rounded-lg overflow-auto border font-mono text-xs text-muted-foreground break-all whitespace-pre-wrap">
-{`// 调用模型必须指定模型 ID，格式为 "<供应商标识>/<模型名称>"
-const results = await ai("将以下内容翻译成英文: \\n" + nodes[0].data.content, "openai/gpt-4o");
+{`// 调用模型必须指定模型插槽标识
+const results = await ai("将以下内容翻译成英文: \\n" + nodes[0].data.content, "slot1");
 
-// 指定图片模型（自动推断或显式指定 mode）
-const imgResults = await ai("画一只可爱的猫咪", "openai/gpt-image-2");
-const imgResults2 = await ai("画一只可爱的猫咪", "openai/gpt-image-2", "generateImage");
+// 指定图片插槽（自动推断或显式指定 mode）
+const imgResults = await ai("画一只可爱的猫咪", "image");
+const imgResults2 = await ai("画一只可爱的猫咪", "image", "generateImage");
 
 // 图生图（传入 mode 为 "editImage"，系统会自动提取选中节点中的图片）
-const editResults = await ai("把这只猫变成水彩风格", "openai/gpt-image-2", "editImage");
+const editResults = await ai("把这只猫变成水彩风格", "image", "editImage");
 
 // 返回值格式
 // [
@@ -327,7 +335,7 @@ const editResults = await ai("把这只猫变成水彩风格", "openai/gpt-image
               <h3 className="font-semibold text-base">图配置模式示例</h3>
               <pre className="bg-muted/50 p-4 rounded-lg overflow-auto border font-mono text-xs text-muted-foreground break-all whitespace-pre-wrap">
 {`// 调用 ai 获取结果（默认 mode 为 "chat"）
-const result = await ai("总结: " + nodes[0].data.content, "openai/gpt-4o");
+const result = await ai("总结: " + nodes[0].data.content, "slot1");
 const newNodeId = "node-" + Math.random();
 
 return {
@@ -358,7 +366,7 @@ return {
 const text = nodes.map(n => n.data.content).join("\\n");
 
 // 2. 调用模型处理数据（文生文，mode 默认为 "chat"）
-const results = await ai(\`请提炼以下内容的核心观点：\\n\${text}\`, "openai/gpt-4o");
+const results = await ai(\`请提炼以下内容的核心观点：\\n\${text}\`, "slot1");
 
 // 3. 将结果输出（新节点的生成由外部连线方式决定）
 return results;`}

@@ -18,6 +18,7 @@ export interface IdeaNodeData extends Record<string, unknown> {
   sourceAction?: string;
   sourceProvider?: string;
   sourceModel?: string;
+  sourceSlot?: string;
   sourceColor?: string;
   isEdited?: boolean;
   actionId?: string;
@@ -29,6 +30,8 @@ export type IdeaNode = Node<IdeaNodeData>;
 export type ModelProtocol = 'openai' | 'openai-responses' | 'anthropic' | 'gemini' | 'generic';
 
 export type CallMode = 'chat' | 'generateImage' | 'editImage';
+
+export type ModelCapability = 'chat' | 'generateImage' | 'editImage';
 
 export interface AIModelConfig {
   id: string;
@@ -50,6 +53,14 @@ export interface AIProviderConfig {
   models: AIModelConfig[];
 }
 
+/** 模型插槽 —— 每个 Action 中动态配置的「函数入参」，声明能力需求 */
+export interface ModelSlot {
+  /** action 内唯一的插槽标识，代码中通过此字段引用模型 */
+  identifier: string;
+  capability: ModelCapability;
+  boundModelId?: string;   // 可选：默认绑定的模型 "<providerKey>/<modelName>"
+}
+
 export interface ActionConfig {
   id: string;
   name: string;
@@ -62,8 +73,11 @@ export interface ActionConfig {
   processor: {
     type: 'llm' | 'code';
     payload: string;
-    modelId?: string; // 格式: "<供应商标识>/<模型名称>"
-    mode?: CallMode; // 仅 llm 模式下有效，明确指定调用方式
+    /** 此 action 声明的模型插槽列表（函数入参） */
+    slots?: ModelSlot[];
+    /** LLM 模式下默认使用的插槽 identifier（指向 slots 中的某一项） */
+    slotRef?: string;
+    mode?: CallMode;
   };
   output: {
     connectionType: 'source_to_new' | 'new_to_source' | 'none';

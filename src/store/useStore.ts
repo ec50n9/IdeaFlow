@@ -21,16 +21,16 @@ interface AppState {
   edges: Edge[];
   actions: ActionConfig[];
   providers: AIProviderConfig[];
-  
+
   onNodesChange: OnNodesChange<IdeaNode>;
   onEdgesChange: OnEdgesChange;
   onConnect: OnConnect;
-  
+
   addNode: (node: IdeaNode) => void;
   updateNodeData: (id: string, data: Partial<IdeaNode['data']>) => void;
   setNodes: (nodes: IdeaNode[]) => void;
   setEdges: (edges: Edge[]) => void;
-  
+
   addAction: (action: ActionConfig) => void;
   updateAction: (id: string, action: Partial<ActionConfig>) => void;
   deleteAction: (id: string) => void;
@@ -43,6 +43,10 @@ interface AppState {
   setHasUserCreatedNode: (v: boolean) => void;
 }
 
+function createDefaultSlot(): { identifier: string; capability: 'chat' } {
+  return { identifier: '默认插槽', capability: 'chat' };
+}
+
 const defaultActions: ActionConfig[] = [
   {
     id: 'expand-idea',
@@ -51,7 +55,9 @@ const defaultActions: ActionConfig[] = [
     trigger: { minNodes: 1, maxNodes: 1 },
     processor: {
       type: 'llm',
-      payload: '请基于以下内容，多维度展开想象，并拆分成3个独立的子观点。待处理内容：\n\n{{selected_content}}'
+      payload: '请基于以下内容，多维度展开想象，并拆分成3个独立的子观点。待处理内容：\n\n{{selected_content}}',
+      slots: [createDefaultSlot()],
+      slotRef: '默认插槽',
     },
     output: { connectionType: 'source_to_new' }
   },
@@ -62,7 +68,9 @@ const defaultActions: ActionConfig[] = [
     trigger: { minNodes: 1, maxNodes: 1 },
     processor: {
       type: 'llm',
-      payload: '将以下内容翻译为纯正的英文：\n\n{{selected_content}}'
+      payload: '将以下内容翻译为纯正的英文：\n\n{{selected_content}}',
+      slots: [createDefaultSlot()],
+      slotRef: '默认插槽',
     },
     output: { connectionType: 'source_to_new' }
   },
@@ -73,7 +81,9 @@ const defaultActions: ActionConfig[] = [
     trigger: { minNodes: 2, maxNodes: null },
     processor: {
       type: 'llm',
-      payload: '请将以下多个观点总结融合为一个核心观点：\n\n{{selected_content}}'
+      payload: '请将以下多个观点总结融合为一个核心观点：\n\n{{selected_content}}',
+      slots: [createDefaultSlot()],
+      slotRef: '默认插槽',
     },
     output: { connectionType: 'new_to_source' }
   }
@@ -131,7 +141,7 @@ export const useStore = create<AppState>()(
           }),
         });
       },
-      
+
       setNodes: (nodes: IdeaNode[]) => set({ nodes }),
       setEdges: (edges: Edge[]) => set({ edges }),
 
@@ -143,7 +153,7 @@ export const useStore = create<AppState>()(
 
       updateAction: (id: string, actionData: Partial<ActionConfig>) => {
         set({
-          actions: get().actions.map((act) => 
+          actions: get().actions.map((act) =>
             act.id === id ? { ...act, ...actionData } : act
           )
         });
@@ -163,7 +173,7 @@ export const useStore = create<AppState>()(
 
       updateProvider: (id: string, providerData: Partial<AIProviderConfig>) => {
         set({
-          providers: get().providers.map((prov) => 
+          providers: get().providers.map((prov) =>
             prov.id === id ? { ...prov, ...providerData } : prov
           )
         });
@@ -198,7 +208,6 @@ export const useStore = create<AppState>()(
           data: {
             ...node.data,
             runningActions: [],
-            // 兜底：若 content 中仍意外含有 base64，持久化前替换为占位符
             content: node.data.content.replace(
               /data:image\/[^;]+;base64,[\sA-Za-z0-9+/=]+/g,
               '[图片]'
