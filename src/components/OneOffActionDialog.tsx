@@ -17,9 +17,10 @@ interface OneOffActionDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   selectedNodes: IdeaNode[];
+  initialAction?: ActionConfig;
 }
 
-export function OneOffActionDialog({ open, onOpenChange, selectedNodes }: OneOffActionDialogProps) {
+export function OneOffActionDialog({ open, onOpenChange, selectedNodes, initialAction }: OneOffActionDialogProps) {
   const { addAction } = useStore();
   const [mode, setMode] = useState<'execute' | 'convert'>('execute');
 
@@ -40,19 +41,33 @@ export function OneOffActionDialog({ open, onOpenChange, selectedNodes }: OneOff
   const [slotDialogOpen, setSlotDialogOpen] = useState(false);
   const [pendingAction, setPendingAction] = useState<ActionConfig | null>(null);
 
-  // 每次打开时重置 mode，但保留处理器配置以便复用
+  // 每次打开时重置 mode，有初始值时预填充
   useEffect(() => {
     if (open) {
       setMode('execute');
-      setName('次抛动作');
-      setMinNodes(selectedNodes.length || 1);
-      setMaxNodes(null);
-      // 颜色默认分配一个未使用的
-      const usedColors = new Set(useStore.getState().actions.map(a => a.color).filter(Boolean));
-      const defaultColor = PRESET_ACTION_COLORS.find(c => !usedColors.has(c.name))?.name || 'purple';
-      setColor(defaultColor);
+      if (initialAction) {
+        setProcessor(initialAction.processor);
+        setOutput(initialAction.output);
+        setName(initialAction.name || '次抛动作');
+        setColor(initialAction.color || 'slate');
+        setMinNodes(initialAction.trigger?.minNodes ?? (selectedNodes.length || 1));
+        setMaxNodes(initialAction.trigger?.maxNodes ?? null);
+      } else {
+        setProcessor({
+          type: 'llm',
+          payload: '提示词模板使用 {{selected_content}}',
+        });
+        setOutput({ connectionType: 'source_to_new' });
+        setName('次抛动作');
+        setMinNodes(selectedNodes.length || 1);
+        setMaxNodes(null);
+        // 颜色默认分配一个未使用的
+        const usedColors = new Set(useStore.getState().actions.map(a => a.color).filter(Boolean));
+        const defaultColor = PRESET_ACTION_COLORS.find(c => !usedColors.has(c.name))?.name || 'purple';
+        setColor(defaultColor);
+      }
     }
-  }, [open, selectedNodes.length]);
+  }, [open, selectedNodes.length, initialAction?.id]);
 
   const handleExecute = async () => {
     const tempAction: ActionConfig = {

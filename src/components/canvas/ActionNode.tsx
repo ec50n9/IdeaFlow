@@ -3,41 +3,39 @@ import { Handle, Position, NodeProps } from '@xyflow/react';
 import { ActionNode, IdeaNode } from '@/types';
 import { useStore } from '@/store/useStore';
 import { getActionColorClasses, cn } from '@/lib/utils';
-import { Sparkles, Play, Copy } from 'lucide-react';
+import { Sparkles, Play, Copy, Pencil } from 'lucide-react';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
-import { copyActionConfig, processAction } from '@/lib/engine';
+import { processAction } from '@/lib/engine';
+import { ActionEditDialog } from '@/components/ActionEditDialog';
+import { OneOffActionDialog } from '@/components/OneOffActionDialog';
 
 export const ActionNodeComponent = memo(({ id, data, selected }: NodeProps<ActionNode>) => {
   const providers = useStore((state) => state.providers);
+
   const [rerunPopoverOpen, setRerunPopoverOpen] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [cloneDialogOpen, setCloneDialogOpen] = useState(false);
 
   const snapshot = data.actionSnapshot;
-  const slotRef = snapshot.processor.slotRef || (snapshot.processor.slots?.[0]?.identifier);
+  const slotRef = snapshot.processor.slotRef || snapshot.processor.slots?.[0]?.identifier;
   const currentSlot = snapshot.processor.slots?.find((s) => s.identifier === slotRef);
 
-  const handleCopy = useCallback(() => {
-    copyActionConfig(id);
+  const sourceNodes = useMemo(() => {
+    const store = useStore.getState();
+    const sourceNodeIds = store.edges
+      .filter((e) => e.target === id)
+      .map((e) => e.source);
+    return store.nodes.filter((n) => sourceNodeIds.includes(n.id)) as IdeaNode[];
   }, [id]);
 
   const handleModelSelect = useCallback(
     (modelRef: string) => {
-      const store = useStore.getState();
-
-      // 收集源节点
-      const sourceNodeIds = store.edges
-        .filter((e) => e.target === id)
-        .map((e) => e.source);
-      const sourceNodes = store.nodes.filter(
-        (n) => sourceNodeIds.includes(n.id)
-      ) as IdeaNode[];
-
       if (sourceNodes.length === 0) {
         setRerunPopoverOpen(false);
         return;
       }
 
-      // 构建带新模型的 action 配置
       const updatedSlots = (snapshot.processor.slots || []).map((s) =>
         s.identifier === slotRef ? { ...s, boundModelId: modelRef } : s
       );
@@ -49,11 +47,27 @@ export const ActionNodeComponent = memo(({ id, data, selected }: NodeProps<Actio
         },
       };
 
-      // 全新执行（创建新的 action 节点 + 结果节点）
       processAction(updatedAction, sourceNodes);
       setRerunPopoverOpen(false);
     },
-    [id, snapshot, slotRef]
+    [id, snapshot, slotRef, sourceNodes]
+  );
+
+  const handleEditSave = useCallback(
+    (updatedAction: typeof snapshot) => {
+      const store = useStore.getState();
+      const existing = store.actions.find((a) => a.id === updatedAction.id);
+      if (existing) {
+        store.updateAction(updatedAction.id, updatedAction);
+      }
+      store.updateNodeData(id, {
+        actionSnapshot: updatedAction,
+        actionName: updatedAction.name,
+        actionColor: updatedAction.color,
+      });
+      setEditDialogOpen(false);
+    },
+    [id]
   );
 
   const candidates = useMemo(() => {
@@ -200,10 +214,20 @@ export const ActionNodeComponent = memo(({ id, data, selected }: NodeProps<Actio
             size="sm"
             variant="ghost"
             className="h-6 text-[10px] px-2 rounded-lg"
-            onClick={handleCopy}
+            onClick={() => setEditDialogOpen(true)}
+          >
+            <Pencil className="w-3 h-3 mr-0.5" />
+            编辑
+          </Button>
+
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 text-[10px] px-2 rounded-lg"
+            onClick={() => setCloneDialogOpen(true)}
           >
             <Copy className="w-3 h-3 mr-0.5" />
-            拷贝
+            克隆
           </Button>
         </div>
       )}
@@ -212,6 +236,20 @@ export const ActionNodeComponent = memo(({ id, data, selected }: NodeProps<Actio
       {data.status === 'processing' && (
         <div className="absolute -top-2 -right-2 w-3 h-3 rounded-full bg-primary animate-pulse border-2 border-background" />
       )}
+
+      <ActionEditDialog
+        open={editDialogOpen}
+        onOpenChange={setEditDialogOpen}
+        action={snapshot}
+        onSave={handleEditSave}
+      />
+
+      <OneOffActionDialog
+        open={cloneDialogOpen}
+        onOpenChange={setCloneDialogOpen}
+        selectedNodes={sourceNodes}
+        initialAction={snapshot}
+      />
     </div>
   );
 });

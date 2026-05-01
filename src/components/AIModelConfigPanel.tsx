@@ -41,6 +41,7 @@ export function AIModelConfigPanel() {
   const [panelOpen, setPanelOpen] = useState(false);
 
   const [editingProvider, setEditingProvider] = useState<AIProviderConfig | null>(null);
+  const [isNewProvider, setIsNewProvider] = useState(false);
 
   const handleAddNew = () => {
     const newProvider: AIProviderConfig = {
@@ -60,14 +61,20 @@ export function AIModelConfigPanel() {
         }
       ]
     };
-    addProvider(newProvider);
+    setIsNewProvider(true);
     setEditingProvider(newProvider);
   };
 
   const handleSaveEdit = () => {
     if (editingProvider) {
-      updateProvider(editingProvider.id, editingProvider);
+      const existing = providers?.find(p => p.id === editingProvider.id);
+      if (existing) {
+        updateProvider(editingProvider.id, editingProvider);
+      } else {
+        addProvider(editingProvider);
+      }
       setEditingProvider(null);
+      setIsNewProvider(false);
     }
   };
 
@@ -159,7 +166,7 @@ export function AIModelConfigPanel() {
       <Dialog open={!!editingProvider} onOpenChange={(open) => !open && setEditingProvider(null)}>
         <DialogContent className="sm:max-w-[700px] gap-6 flex flex-col max-h-[85vh] overflow-hidden p-0">
           <DialogHeader className="px-6 py-4 border-b m-0 flex-none shrink-0 border-b relative">
-            <DialogTitle>{editingProvider?.id && !providers?.find(p => p.id === editingProvider.id) ? '新建供应商配置' : '编辑供应商配置'}</DialogTitle>
+            <DialogTitle>{isNewProvider ? '新建供应商配置' : '编辑供应商配置'}</DialogTitle>
           </DialogHeader>
           
           {editingProvider && (

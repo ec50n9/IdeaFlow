@@ -2,18 +2,13 @@ import { useState } from 'react';
 import { useStore } from '@/store/useStore';
 import { Button } from '@/components/ui/button';
 import { Settings, Plus, Trash2, Pencil, X, HelpCircle } from 'lucide-react';
-import { ActionProcessorForm } from '@/components/ActionProcessorForm';
 import { capabilityLabel } from '@/lib/modelSlots';
-import { Input } from '@/components/ui/input';
-
-import { Label } from '@/components/ui/label';
 import { ActionConfig } from '@/types';
-
 import { v4 as uuidv4 } from 'uuid';
 import { PRESET_ACTION_COLORS, ACTION_DOT_CLASS } from '@/lib/utils';
 import { cn } from '@/lib/utils';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
+import { ActionEditDialog } from './ActionEditDialog';
 
 function getCapabilityLabels(model: { supportsText: boolean; supportsTextToImage: boolean; supportsImageToImage: boolean }): string[] {
   const labels: string[] = [];
@@ -44,8 +39,9 @@ export function ActionConfigPanel() {
     return slots.map(s => `${s.identifier} (${capabilityLabel(s.capability)})`).join(', ');
   };
 
+  const [isNewAction, setIsNewAction] = useState(false);
+
   const handleAddNew = () => {
-    // 为新增动作分配一个未使用的颜色，若全部用完则默认 purple
     const usedColors = new Set(actions.map(a => a.color).filter(Boolean));
     const defaultColor = PRESET_ACTION_COLORS.find(c => !usedColors.has(c.name))?.name || 'purple';
     const newAction: ActionConfig = {
@@ -59,15 +55,19 @@ export function ActionConfigPanel() {
       },
       output: { connectionType: 'source_to_new' }
     };
-    addAction(newAction);
+    setIsNewAction(true);
     setEditingAction(newAction);
   };
 
-  const handleSaveEdit = () => {
-    if (editingAction) {
-      updateAction(editingAction.id, editingAction);
-      setEditingAction(null);
+  const handleSaveEdit = (action: ActionConfig) => {
+    const existing = actions.find(a => a.id === action.id);
+    if (existing) {
+      updateAction(action.id, action);
+    } else {
+      addAction(action);
     }
+    setEditingAction(null);
+    setIsNewAction(false);
   };
 
   return (
@@ -140,108 +140,18 @@ export function ActionConfigPanel() {
         </DialogContent>
       </Dialog>
 
-      {/* Edit Action Dialog */}
-      <Dialog open={!!editingAction} onOpenChange={(open) => !open && setEditingAction(null)}>
-        <DialogContent className="sm:max-w-[600px] gap-6 w-[90vw] overflow-x-hidden">
-          <DialogHeader>
-            <DialogTitle>{editingAction?.id && !actions.find(a => a.id === editingAction.id) ? '新建动作' : '编辑动作'}</DialogTitle>
-          </DialogHeader>
-          
-          {editingAction && (
-            <div className="flex flex-col gap-5 py-4 overflow-x-hidden">
-              <div className="flex flex-col gap-2">
-                <Label>动作名称</Label>
-                <Input 
-                  value={editingAction.name} 
-                  onChange={e => setEditingAction({ ...editingAction, name: e.target.value })}
-                />
-              </div>
-
-              <div className="flex flex-col gap-2">
-                <Label>标签颜色</Label>
-                <Popover>
-                  <PopoverTrigger
-                    render={
-                      <button
-                        type="button"
-                        className="flex items-center gap-2.5 w-fit px-3 py-2 rounded-lg border border-input bg-background hover:bg-muted/50 transition-colors text-sm cursor-pointer"
-                      >
-                        <div className={cn("w-4 h-4 rounded-full", ACTION_DOT_CLASS[editingAction.color || 'purple'])} />
-                        <span>
-                          {PRESET_ACTION_COLORS.find(c => c.name === editingAction.color)?.label
-                            || PRESET_ACTION_COLORS[0].label}
-                        </span>
-                      </button>
-                    }
-                  />
-                  <PopoverContent className="w-72">
-                    <div className="grid grid-cols-4 gap-2">
-                      {PRESET_ACTION_COLORS.map((c) => (
-                        <button
-                          key={c.name}
-                          type="button"
-                          onClick={() => setEditingAction({ ...editingAction, color: c.name })}
-                          className={cn(
-                            "flex flex-col items-center gap-1 p-2 rounded-lg border-2 transition-all",
-                            editingAction.color === c.name
-                              ? "border-primary ring-1 ring-primary/20 bg-primary/5"
-                              : "border-transparent hover:border-muted hover:bg-muted/50"
-                          )}
-                        >
-                          <div className={cn("w-7 h-7 rounded-full", ACTION_DOT_CLASS[c.name])} />
-                          <span className="text-xs">{c.label}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </PopoverContent>
-                </Popover>
-              </div>
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div className="flex flex-col gap-2">
-                  <Label>最少选中节点数</Label>
-                  <Input 
-                    type="number" 
-                    min={1}
-                    value={editingAction.trigger.minNodes}
-                    onChange={e => setEditingAction({ 
-                      ...editingAction, 
-                      trigger: { ...editingAction.trigger, minNodes: parseInt(e.target.value) || 1 }
-                    })}
-                  />
-                </div>
-                <div className="flex flex-col gap-2">
-                  <Label>最多选中节点数</Label>
-                  <Input 
-                    type="number" 
-                    placeholder="无限定"
-                    value={editingAction.trigger.maxNodes === null ? '' : editingAction.trigger.maxNodes}
-                    onChange={e => {
-                      const val = e.target.value;
-                      setEditingAction({ 
-                        ...editingAction, 
-                        trigger: { ...editingAction.trigger, maxNodes: val === '' ? null : parseInt(val) }
-                      });
-                    }}
-                  />
-                </div>
-              </div>
-
-              <ActionProcessorForm
-                processor={editingAction.processor}
-                output={editingAction.output}
-                onChange={(processor, output) => setEditingAction({ ...editingAction, processor, output })}
-                onShowHelp={() => setHelpOpen(true)}
-              />
-
-              <div className="flex justify-end gap-2 mt-4">
-                <Button variant="outline" onClick={() => setEditingAction(null)}>取消</Button>
-                <Button onClick={handleSaveEdit}>保存修改</Button>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+      <ActionEditDialog
+        open={!!editingAction}
+        onOpenChange={(open) => {
+          if (!open) {
+            setEditingAction(null);
+            setIsNewAction(false);
+          }
+        }}
+        action={editingAction}
+        onSave={handleSaveEdit}
+        isNew={isNewAction}
+      />
 
 
       {/* Code Help Dialog */}

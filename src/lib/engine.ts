@@ -513,64 +513,6 @@ export async function processOneOff(
 }
 
 // ─────────────────────────────────────────────────────────────
-// 重新运行 Action（从已有 Action 节点触发）
-// ─────────────────────────────────────────────────────────────
-
-export async function reprocessAction(actionNodeId: string) {
-  const store = useStore.getState();
-  const actionNode = store.nodes.find(
-    (n) => n.id === actionNodeId && n.type === 'actionNode'
-  );
-  if (!actionNode) return;
-
-  // 收集源节点
-  const sourceNodeIds = store.edges
-    .filter((e) => e.target === actionNodeId)
-    .map((e) => e.source);
-  const sourceNodes = store.nodes.filter(
-    (n) => sourceNodeIds.includes(n.id)
-  ) as IdeaNode[];
-
-  if (sourceNodes.length === 0) return;
-
-  // 清除旧的输出边和结果节点
-  const outputEdgeIds = new Set(
-    store.edges.filter((e) => e.source === actionNodeId).map((e) => e.id)
-  );
-  const outputNodeIds = new Set(
-    store.edges
-      .filter((e) => e.source === actionNodeId)
-      .map((e) => e.target)
-  );
-
-  store.setNodes(store.nodes.filter((n) => !outputNodeIds.has(n.id)) as AppNode[]);
-  store.setEdges(store.edges.filter((e) => !outputEdgeIds.has(e.id)));
-
-  const action = (actionNode.data as any).actionSnapshot;
-  await processAction(action, sourceNodes, actionNodeId);
-}
-
-// ─────────────────────────────────────────────────────────────
-// 拷贝 Action 配置（保存为新的 ActionConfig）
-// ─────────────────────────────────────────────────────────────
-
-export function copyActionConfig(actionNodeId: string) {
-  const store = useStore.getState();
-  const actionNode = store.nodes.find(
-    (n) => n.id === actionNodeId && n.type === 'actionNode'
-  );
-  if (!actionNode) return;
-
-  const snapshot = (actionNode.data as any).actionSnapshot;
-  const newAction: ActionConfig = {
-    ...snapshot,
-    id: uuidv4(),
-    name: `${snapshot.name} 副本`,
-  };
-  store.addAction(newAction);
-}
-
-// ─────────────────────────────────────────────────────────────
 // 自定义图表配置（Code Action 自定义 nodes/edges）
 // ─────────────────────────────────────────────────────────────
 
