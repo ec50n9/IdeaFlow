@@ -4,10 +4,8 @@ import { NodeToolbar, Position } from '@xyflow/react';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { cn, getActionColorClasses } from '@/lib/utils';
-import { processAction } from '@/lib/engine';
 import { OneOffActionDialog } from '@/components/OneOffActionDialog';
 import { SlotResolveDialog } from '@/components/SlotResolveDialog';
-import { getUnresolvedSlots } from '@/lib/modelSlots';
 import { ActionConfig, IdeaNode } from '@/types';
 import { ChevronDown } from 'lucide-react';
 
@@ -50,13 +48,8 @@ export const FloatingToolbar = memo(() => {
   const selectedNodeIds = selectedNodes.map((n) => n.id);
 
   const handleExecuteAction = (action: ActionConfig) => {
-    const unresolved = getUnresolvedSlots(action);
-    if (unresolved.length > 0) {
-      setPendingAction(action);
-      setSlotDialogOpen(true);
-      return;
-    }
-    processAction(action, selectedNodes);
+    setPendingAction(action);
+    setSlotDialogOpen(true);
   };
 
   return (

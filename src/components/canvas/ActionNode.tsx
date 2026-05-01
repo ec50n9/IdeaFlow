@@ -4,24 +4,20 @@ import { AppNode, ActionNode, IdeaNode } from '@/types';
 import { useStore } from '@/store/useStore';
 import { getActionColorClasses, cn } from '@/lib/utils';
 import { Sparkles, Play, Copy, Pencil, Eye } from 'lucide-react';
-import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
-import { processAction } from '@/lib/engine';
 import { ActionEditDialog } from '@/components/ActionEditDialog';
 import { OneOffActionDialog } from '@/components/OneOffActionDialog';
+import { SlotResolveDialog } from '@/components/SlotResolveDialog';
 
 export const ActionNodeComponent = memo(({ id, data, selected }: NodeProps<ActionNode>) => {
-  const providers = useStore((state) => state.providers);
-
-  const [rerunPopoverOpen, setRerunPopoverOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
   const [cloneDialogOpen, setCloneDialogOpen] = useState(false);
+  const [slotDialogOpen, setSlotDialogOpen] = useState(false);
 
   const snapshot = data.actionSnapshot;
   const isOneOff = snapshot.id === 'one-off';
-  const slotRef = snapshot.processor.slotRef || snapshot.processor.slots?.[0]?.identifier;
-  const currentSlot = snapshot.processor.slots?.find((s) => s.identifier === slotRef);
+  const currentSlot = snapshot.processor.slots?.[0];
 
   const sourceNodes = useMemo(() => {
     const store = useStore.getState();
@@ -30,30 +26,6 @@ export const ActionNodeComponent = memo(({ id, data, selected }: NodeProps<Actio
       .map((e) => e.source);
     return store.nodes.filter((n): n is IdeaNode => sourceNodeIds.includes(n.id) && n.type === 'ideaNode');
   }, [id]);
-
-  const handleModelSelect = useCallback(
-    (modelRef: string) => {
-      if (sourceNodes.length === 0) {
-        setRerunPopoverOpen(false);
-        return;
-      }
-
-      const updatedSlots = (snapshot.processor.slots || []).map((s) =>
-        s.identifier === slotRef ? { ...s, boundModelId: modelRef } : s
-      );
-      const updatedAction = {
-        ...snapshot,
-        processor: {
-          ...snapshot.processor,
-          slots: updatedSlots,
-        },
-      };
-
-      processAction(updatedAction, sourceNodes);
-      setRerunPopoverOpen(false);
-    },
-    [id, snapshot, slotRef, sourceNodes]
-  );
 
   const handleEditSave = useCallback(
     (updatedAction: typeof snapshot) => {
@@ -68,26 +40,9 @@ export const ActionNodeComponent = memo(({ id, data, selected }: NodeProps<Actio
     [id]
   );
 
-  const candidates = useMemo(() => {
-    if (!currentSlot) return [];
-    const results: { providerName: string; modelName: string; modelRef: string }[] = [];
-    for (const provider of providers) {
-      for (const model of provider.models) {
-        const supported =
-          (currentSlot.capability === 'chat' && model.supportsText) ||
-          (currentSlot.capability === 'generateImage' && model.supportsTextToImage) ||
-          (currentSlot.capability === 'editImage' && model.supportsImageToImage);
-        if (supported) {
-          results.push({
-            providerName: provider.name,
-            modelName: model.model,
-            modelRef: `${provider.key}/${model.model}`,
-          });
-        }
-      }
-    }
-    return results;
-  }, [currentSlot, providers]);
+  const handleRerun = useCallback(() => {
+    setSlotDialogOpen(true);
+  }, []);
 
   return (
     <div
@@ -166,47 +121,15 @@ export const ActionNodeComponent = memo(({ id, data, selected }: NodeProps<Actio
       {/* Selected toolbar */}
       {selected && (
         <div className="absolute -bottom-9 left-1/2 -translate-x-1/2 flex items-center gap-1 bg-background/95 backdrop-blur-md border border-border shadow-md rounded-xl p-1 z-50 whitespace-nowrap">
-          <Popover open={rerunPopoverOpen} onOpenChange={setRerunPopoverOpen}>
-            <PopoverTrigger
-              render={
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-6 text-[10px] px-2 rounded-lg"
-                >
-                  <Play className="w-3 h-3 mr-0.5" />
-                  重新运行
-                </Button>
-              }
-            />
-            <PopoverContent className="w-56 p-0 overflow-hidden" align="center">
-              <div className="text-[11px] text-muted-foreground px-3 py-2 border-b bg-muted/30">
-                选择模型重新运行
-              </div>
-              <div className="flex flex-col gap-0.5 max-h-[200px] overflow-y-auto p-1">
-                {candidates.map((c) => (
-                  <button
-                    key={c.modelRef}
-                    type="button"
-                    onClick={() => handleModelSelect(c.modelRef)}
-                    className={cn(
-                      'text-left text-xs px-2 py-1.5 rounded-md transition-colors',
-                      currentSlot?.boundModelId === c.modelRef
-                        ? 'bg-primary/10 text-primary'
-                        : 'hover:bg-muted'
-                    )}
-                  >
-                    {c.providerName} / {c.modelName}
-                  </button>
-                ))}
-                {candidates.length === 0 && (
-                  <div className="text-xs text-muted-foreground px-2 py-3 text-center">
-                    无可用模型
-                  </div>
-                )}
-              </div>
-            </PopoverContent>
-          </Popover>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 text-[10px] px-2 rounded-lg"
+            onClick={handleRerun}
+          >
+            <Play className="w-3 h-3 mr-0.5" />
+            重新运行
+          </Button>
 
           {isOneOff ? (
             <Button
@@ -267,6 +190,13 @@ export const ActionNodeComponent = memo(({ id, data, selected }: NodeProps<Actio
         onOpenChange={setCloneDialogOpen}
         selectedNodes={sourceNodes}
         initialAction={snapshot}
+      />
+
+      <SlotResolveDialog
+        open={slotDialogOpen}
+        onOpenChange={setSlotDialogOpen}
+        action={snapshot}
+        selectedNodes={sourceNodes}
       />
     </div>
   );

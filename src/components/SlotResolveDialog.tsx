@@ -1,6 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
 import {
   Select,
   SelectContent,
@@ -11,7 +10,7 @@ import {
 import { ActionConfig, IdeaNode } from '@/types';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { AlertCircle } from 'lucide-react';
-import { getUnresolvedSlots, capabilityLabel } from '@/lib/modelSlots';
+import { getActionRequiredSlots, getModelsByCapability, capabilityLabel } from '@/lib/modelSlots';
 import { processAction } from '@/lib/engine';
 
 const NONE_VALUE = '__none__';
@@ -28,28 +27,39 @@ export function SlotResolveDialog({ open, onOpenChange, action, selectedNodes }:
   const [bindings, setBindings] = useState<Record<string, string>>({});
   const [executing, setExecuting] = useState(false);
 
-  const unresolved = action ? getUnresolvedSlots(action) : [];
+  const slots = useMemo(() => {
+    return action ? getActionRequiredSlots(action) : [];
+  }, [action?.id]);
+
+  const slotCandidates = useMemo(() => {
+    return slots.map((slot) => ({
+      slot,
+      candidates: getModelsByCapability(slot.capability),
+    }));
+  }, [slots]);
 
   // Reset bindings when dialog opens
   useEffect(() => {
-    if (open && unresolved.length > 0) {
+    if (open && action) {
       const initial: Record<string, string> = {};
-      for (const u of unresolved) {
-        if (u.candidates.length === 1) {
-          initial[u.slot.identifier] = `${u.candidates[0].provider.key}/${u.candidates[0].model.model}`;
+      for (const { slot, candidates } of slotCandidates) {
+        if (slot.boundModelId) {
+          initial[slot.identifier] = slot.boundModelId;
+        } else if (candidates.length === 1) {
+          initial[slot.identifier] = `${candidates[0].provider.key}/${candidates[0].model.model}`;
         }
       }
       setBindings(initial);
       setExecuting(false);
     }
-  }, [open, action?.id]);
+  }, [open, action?.id, slotCandidates]);
 
   const handleConfirm = async () => {
     if (!action) return;
 
-    // Validate all unresolved slots have a binding
-    for (const u of unresolved) {
-      if (!bindings[u.slot.identifier]) {
+    // Validate all slots have a binding
+    for (const { slot } of slotCandidates) {
+      if (!bindings[slot.identifier]) {
         return;
       }
     }
@@ -76,7 +86,8 @@ export function SlotResolveDialog({ open, onOpenChange, action, selectedNodes }:
     await processAction(resolvedAction, selectedNodes);
   };
 
-  const allBound = unresolved.every((u) => !!bindings[u.slot.identifier]);
+  const allBound = slotCandidates.every(({ slot }) => !!bindings[slot.identifier]);
+  const hasEmptyCandidates = slotCandidates.some(({ candidates }) => candidates.length === 0);
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o && !executing) onOpenChange(false); }}>
@@ -86,19 +97,19 @@ export function SlotResolveDialog({ open, onOpenChange, action, selectedNodes }:
         </DialogHeader>
 
         <div className="flex flex-col gap-5 py-4">
-          {unresolved.length === 0 ? (
+          {slotCandidates.length === 0 ? (
             <div className="flex flex-col items-center gap-3 py-8 text-muted-foreground">
               <AlertCircle className="w-10 h-10 opacity-40" />
-              <p className="text-sm">所有插槽均已绑定模型，可以直接执行。</p>
+              <p className="text-sm">此动作未配置模型插槽。</p>
             </div>
           ) : (
             <>
               <p className="text-sm text-muted-foreground">
-                动作「{action?.name}」需要以下模型插槽，但部分插槽尚未绑定具体模型。请为每个插槽选择一个支持其能力的模型：
+                动作「{action?.name}」需要以下模型插槽，请确认或调整每个插槽使用的模型：
               </p>
 
               <div className="flex flex-col gap-4">
-                {unresolved.map(({ slot, candidates }) => (
+                {slotCandidates.map(({ slot, candidates }) => (
                   <div key={slot.identifier} className="flex flex-col gap-2 p-4 border rounded-xl">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
@@ -154,7 +165,7 @@ export function SlotResolveDialog({ open, onOpenChange, action, selectedNodes }:
             </Button>
             <Button
               onClick={handleConfirm}
-              disabled={!allBound || executing || unresolved.length === 0}
+              disabled={!allBound || executing || slotCandidates.length === 0 || hasEmptyCandidates}
             >
               {executing ? '执行中...' : '确认并执行'}
             </Button>

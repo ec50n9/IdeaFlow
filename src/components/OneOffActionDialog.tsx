@@ -5,8 +5,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ActionConfig, IdeaNode } from '@/types';
 import { ActionProcessorForm } from '@/components/ActionProcessorForm';
-import { processOneOff } from '@/lib/engine';
-import { getUnresolvedSlots } from '@/lib/modelSlots';
 import { SlotResolveDialog } from '@/components/SlotResolveDialog';
 import { v4 as uuidv4 } from 'uuid';
 import { PRESET_ACTION_COLORS, ACTION_DOT_CLASS, cn } from '@/lib/utils';
@@ -80,15 +78,8 @@ export function OneOffActionDialog({ open, onOpenChange, selectedNodes, initialA
       output,
     };
 
-    const unresolved = getUnresolvedSlots(tempAction);
-    if (unresolved.length > 0) {
-      setPendingAction(tempAction);
-      setSlotDialogOpen(true);
-      return;
-    }
-
-    onOpenChange(false);
-    await processOneOff(processor, output, selectedNodes);
+    setPendingAction(tempAction);
+    setSlotDialogOpen(true);
   };
 
   const handleSaveAsAction = () => {
