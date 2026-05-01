@@ -10,6 +10,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { PRESET_ACTION_COLORS, ACTION_DOT_CLASS, cn } from '@/lib/utils';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+
 import { TriggerConfigForm } from '@/components/TriggerConfigForm';
 
 interface OneOffActionDialogProps {
@@ -96,13 +97,14 @@ export function OneOffActionDialog({ open, onOpenChange, selectedNodes, initialA
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-[600px] gap-6 w-[90vw] overflow-x-hidden max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
+        <DialogContent className="sm:max-w-[600px] gap-0 w-[90vw] overflow-hidden max-h-[90vh] flex flex-col p-0">
+          <DialogHeader className="shrink-0 px-6 py-4 border-b">
             <DialogTitle>{readOnly ? '查看次抛' : mode === 'execute' ? '次抛调用' : '保存为动作'}</DialogTitle>
           </DialogHeader>
 
-          <div className="flex flex-col gap-5 py-4 overflow-x-hidden">
-            <ActionProcessorForm
+          <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin px-6 py-4">
+            <div className="flex flex-col gap-5 overflow-x-hidden">
+              <ActionProcessorForm
               processor={processor}
               output={output}
               trigger={trigger}
@@ -164,27 +166,29 @@ export function OneOffActionDialog({ open, onOpenChange, selectedNodes, initialA
               </>
             )}
 
-            <div className="flex justify-end gap-2 mt-4">
-              {readOnly ? (
+            </div>
+          </div>
+
+          <div className="flex-none shrink-0 px-6 py-4 border-t bg-background flex justify-end gap-2">
+            {readOnly ? (
+              <Button variant="outline" onClick={() => setMode('convert')}>
+                保存为动作...
+              </Button>
+            ) : mode === 'execute' ? (
+              <>
                 <Button variant="outline" onClick={() => setMode('convert')}>
                   保存为动作...
                 </Button>
-              ) : mode === 'execute' ? (
-                <>
-                  <Button variant="outline" onClick={() => setMode('convert')}>
-                    保存为动作...
-                  </Button>
-                  <Button onClick={handleExecute}>执行</Button>
-                </>
-              ) : (
-                <>
-                  <Button variant="outline" onClick={() => setMode('execute')}>
-                    返回
-                  </Button>
-                  <Button onClick={handleSaveAsAction}>确认保存</Button>
-                </>
-              )}
-            </div>
+                <Button onClick={handleExecute}>执行</Button>
+              </>
+            ) : (
+              <>
+                <Button variant="outline" onClick={() => setMode('execute')}>
+                  返回
+                </Button>
+                <Button onClick={handleSaveAsAction}>确认保存</Button>
+              </>
+            )}
           </div>
         </DialogContent>
       </Dialog>

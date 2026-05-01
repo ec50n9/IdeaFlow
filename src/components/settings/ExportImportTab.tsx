@@ -10,8 +10,8 @@ import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
-  DialogFooter,
 } from '@/components/ui/dialog';
+
 import {
   buildExportPayload,
   downloadJson,
@@ -405,16 +405,17 @@ export function ExportImportTab() {
       <Dialog open={importPreviewOpen} onOpenChange={(open) => {
         if (!open) handleClosePreview();
       }}>
-        <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
+        <DialogContent className="max-w-lg max-h-[80vh] overflow-hidden flex flex-col p-0 gap-0">
+          <DialogHeader className="shrink-0 px-6 py-4 border-b">
             <DialogTitle>导入预览</DialogTitle>
             <DialogDescription>
               检测到配置文件（导出时间: {importPayload ? new Date(importPayload.exportMeta.exportedAt).toLocaleString('zh-CN') : ''}）
             </DialogDescription>
           </DialogHeader>
 
-          <div className="flex flex-col gap-6 py-2">
-            {/* Preview Providers */}
+          <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin px-6 py-4">
+            <div className="flex flex-col gap-6">
+              {/* Preview Providers */}
             {previewProviders.length > 0 && (
               <div className="flex flex-col gap-3">
                 <div className="flex items-center gap-3">
@@ -479,31 +480,32 @@ export function ExportImportTab() {
               </div>
             )}
 
-            {/* Strategy */}
-            <div className="flex flex-col gap-3">
-              <p className="text-sm font-medium">导入策略</p>
-              <RadioGroup
-                value={importStrategy}
-                onValueChange={(v) => setImportStrategy(v as 'merge' | 'replace')}
-                className="flex flex-col gap-2"
-              >
-                <div className="flex items-center gap-2">
-                  <RadioGroupItem value="merge" id="strategy-merge" />
-                  <Label htmlFor="strategy-merge" className="cursor-pointer text-sm">
-                    合并（同名/同 ID 配置将被覆盖，其余保留）
-                  </Label>
-                </div>
-                <div className="flex items-center gap-2">
-                  <RadioGroupItem value="replace" id="strategy-replace" />
-                  <Label htmlFor="strategy-replace" className="cursor-pointer text-sm">
-                    覆盖（完全替换当前配置）
-                  </Label>
-                </div>
-              </RadioGroup>
+              {/* Strategy */}
+              <div className="flex flex-col gap-3">
+                <p className="text-sm font-medium">导入策略</p>
+                <RadioGroup
+                  value={importStrategy}
+                  onValueChange={(v) => setImportStrategy(v as 'merge' | 'replace')}
+                  className="flex flex-col gap-2"
+                >
+                  <div className="flex items-center gap-2">
+                    <RadioGroupItem value="merge" id="strategy-merge" />
+                    <Label htmlFor="strategy-merge" className="cursor-pointer text-sm">
+                      合并（同名/同 ID 配置将被覆盖，其余保留）
+                    </Label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <RadioGroupItem value="replace" id="strategy-replace" />
+                    <Label htmlFor="strategy-replace" className="cursor-pointer text-sm">
+                      覆盖（完全替换当前配置）
+                    </Label>
+                  </div>
+                </RadioGroup>
+              </div>
             </div>
           </div>
 
-          <DialogFooter>
+          <div className="flex-none shrink-0 px-6 py-4 border-t bg-background flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <Button variant="outline" onClick={handleClosePreview}>
               取消
             </Button>
@@ -515,7 +517,7 @@ export function ExportImportTab() {
               <Upload className="w-4 h-4" />
               确认导入
             </Button>
-          </DialogFooter>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

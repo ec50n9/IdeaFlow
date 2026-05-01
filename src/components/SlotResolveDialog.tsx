@@ -9,6 +9,7 @@ import {
 } from '@/components/ui/select';
 import { ActionConfig, IdeaNode } from '@/types';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+
 import { AlertCircle } from 'lucide-react';
 import { getActionRequiredSlots, getModelsByCapability, capabilityLabel } from '@/lib/modelSlots';
 import { processAction } from '@/lib/engine';
@@ -94,13 +95,14 @@ export function SlotResolveDialog({ open, onOpenChange, action, selectedNodes, o
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o && !executing) onOpenChange(false); }}>
-      <DialogContent className="sm:max-w-[500px] gap-6 w-[90vw] overflow-x-hidden max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-[500px] gap-0 w-[90vw] overflow-hidden max-h-[90vh] flex flex-col p-0">
+        <DialogHeader className="shrink-0 px-6 py-4 border-b">
           <DialogTitle>选择执行模型</DialogTitle>
         </DialogHeader>
 
-        <div className="flex flex-col gap-5 py-4">
-          {slotCandidates.length === 0 ? (
+        <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin px-6 py-4">
+          <div className="flex flex-col gap-5">
+            {slotCandidates.length === 0 ? (
             <div className="flex flex-col items-center gap-3 py-8 text-muted-foreground">
               <AlertCircle className="w-10 h-10 opacity-40" />
               <p className="text-sm">此动作未配置模型插槽。</p>
@@ -162,17 +164,19 @@ export function SlotResolveDialog({ open, onOpenChange, action, selectedNodes, o
             </>
           )}
 
-          <div className="flex justify-end gap-2 mt-2">
-            <Button variant="outline" onClick={() => onOpenChange(false)} disabled={executing}>
-              取消
-            </Button>
-            <Button
-              onClick={handleConfirm}
-              disabled={!allBound || executing || slotCandidates.length === 0 || hasEmptyCandidates}
-            >
-              {executing ? '执行中...' : '确认并执行'}
-            </Button>
           </div>
+        </div>
+
+        <div className="flex-none shrink-0 px-6 py-4 border-t bg-background flex justify-end gap-2">
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={executing}>
+            取消
+          </Button>
+          <Button
+            onClick={handleConfirm}
+            disabled={!allBound || executing || slotCandidates.length === 0 || hasEmptyCandidates}
+          >
+            {executing ? '执行中...' : '确认并执行'}
+          </Button>
         </div>
       </DialogContent>
     </Dialog>

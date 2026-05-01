@@ -8,6 +8,7 @@ import { formatTriggerDescription } from '@/lib/triggerMatcher';
 import { v4 as uuidv4 } from 'uuid';
 import { PRESET_ACTION_COLORS, ACTION_DOT_CLASS, cn } from '@/lib/utils';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+
 import { ActionEditDialog } from '@/components/ActionEditDialog';
 
 function getCapabilityLabels(model: { supportsText: boolean; supportsTextToImage: boolean; supportsImageToImage: boolean }): string[] {
@@ -138,11 +139,12 @@ export function ActionConfigTab() {
 
       {/* Code Help Dialog */}
       <Dialog open={helpOpen} onOpenChange={setHelpOpen}>
-        <DialogContent className="sm:max-w-[700px] gap-6 max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
+        <DialogContent className="sm:max-w-[700px] gap-0 max-h-[85vh] overflow-hidden flex flex-col p-0">
+          <DialogHeader className="shrink-0 px-6 py-4 border-b">
             <DialogTitle>代码逻辑开发说明</DialogTitle>
           </DialogHeader>
-          <div className="flex flex-col gap-6 py-2 text-sm">
+          <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin px-6 py-4">
+            <div className="flex flex-col gap-6 text-sm">
             <div className="flex flex-col gap-2">
               <h3 className="font-semibold text-base">入参: nodes</h3>
               <p className="text-muted-foreground">当前选中的节点数组。每个节点是一个完整的 <code>IdeaNode</code> 对象。</p>
@@ -263,6 +265,7 @@ const results = await ai(\`请提炼以下内容的核心观点：\\n\${text}\`,
 // 3. 将结果输出（新节点的生成由外部连线方式决定）
 return results;`}
               </pre>
+            </div>
             </div>
           </div>
         </DialogContent>

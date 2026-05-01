@@ -9,6 +9,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { PRESET_ACTION_COLORS, ACTION_DOT_CLASS, cn, getActionColorClasses } from '@/lib/utils';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+
 import { AlertCircle } from 'lucide-react';
 import { TriggerConfigForm } from '@/components/TriggerConfigForm';
 
@@ -81,8 +82,8 @@ export function ActionSnapshotDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[600px] gap-6 w-[90vw] overflow-x-hidden max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-[600px] gap-0 w-[90vw] overflow-hidden max-h-[90vh] flex flex-col p-0">
+        <DialogHeader className="shrink-0 px-6 py-4 border-b">
           <DialogTitle>
             {hasNothing
               ? '动作信息'
@@ -94,8 +95,9 @@ export function ActionSnapshotDialog({
           </DialogTitle>
         </DialogHeader>
 
-        <div className="flex flex-col gap-5 py-4 overflow-x-hidden">
-          {hasNothing ? (
+        <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin px-6 py-4">
+          <div className="flex flex-col gap-5 overflow-x-hidden">
+            {hasNothing ? (
             <div className="flex flex-col items-center gap-3 py-8 text-muted-foreground">
               <AlertCircle className="w-10 h-10 opacity-40" />
               <p className="text-sm">该节点由旧版本生成，未保存动作快照。</p>
@@ -180,29 +182,31 @@ export function ActionSnapshotDialog({
             </>
           )}
 
-          <div className="flex justify-end gap-2 mt-4">
-            {hasNothing ? (
+          </div>
+        </div>
+
+        <div className="flex-none shrink-0 px-6 py-4 border-t bg-background flex justify-end gap-2">
+          {hasNothing ? (
+            <Button variant="outline" onClick={() => onOpenChange(false)}>
+              关闭
+            </Button>
+          ) : mode === 'view' ? (
+            <>
               <Button variant="outline" onClick={() => onOpenChange(false)}>
                 关闭
               </Button>
-            ) : mode === 'view' ? (
-              <>
-                <Button variant="outline" onClick={() => onOpenChange(false)}>
-                  关闭
-                </Button>
-                {canConvert && (
-                  <Button onClick={() => setMode('convert')}>转换为动作...</Button>
-                )}
-              </>
-            ) : (
-              <>
-                <Button variant="outline" onClick={() => setMode('view')}>
-                  返回
-                </Button>
-                <Button onClick={handleSaveAsAction}>确认保存</Button>
-              </>
-            )}
-          </div>
+              {canConvert && (
+                <Button onClick={() => setMode('convert')}>转换为动作...</Button>
+              )}
+            </>
+          ) : (
+            <>
+              <Button variant="outline" onClick={() => setMode('view')}>
+                返回
+              </Button>
+              <Button onClick={handleSaveAsAction}>确认保存</Button>
+            </>
+          )}
         </div>
       </DialogContent>
     </Dialog>

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { ActionConfig } from '@/types';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
@@ -78,14 +79,15 @@ export function ActionEditDialog({ open, onOpenChange, action, onSave, isNew }: 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[600px] gap-6 w-[90vw] overflow-x-hidden max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-[600px] gap-0 w-[90vw] overflow-hidden max-h-[90vh] flex flex-col p-0">
+        <DialogHeader className="shrink-0 px-6 py-4 border-b">
           <DialogTitle>{isNew ? '新建动作' : '编辑动作'}</DialogTitle>
         </DialogHeader>
 
-        <div className="flex flex-col gap-5 py-4 overflow-x-hidden">
-          <div className="flex flex-col gap-2">
-            <Label>动作名称</Label>
+        <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin px-6 py-4">
+          <div className="flex flex-col gap-5 overflow-x-hidden">
+            <div className="flex flex-col gap-2">
+              <Label>动作名称</Label>
             <Input
               value={editingAction.name}
               onChange={(e) => setEditingAction({ ...editingAction, name: e.target.value })}
@@ -151,13 +153,15 @@ export function ActionEditDialog({ open, onOpenChange, action, onSave, isNew }: 
             }
           />
 
-          <div className="flex justify-end gap-2 mt-4">
-            <CopyConfigButton config={editingAction} />
-            <Button variant="outline" onClick={() => onOpenChange(false)}>
-              取消
-            </Button>
-            <Button onClick={handleSave}>保存</Button>
           </div>
+        </div>
+
+        <div className="flex-none shrink-0 px-6 py-4 border-t bg-background flex justify-end gap-2">
+          <CopyConfigButton config={editingAction} />
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            取消
+          </Button>
+          <Button onClick={handleSave}>保存</Button>
         </div>
       </DialogContent>
     </Dialog>
