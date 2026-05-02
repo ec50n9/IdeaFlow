@@ -1,4 +1,5 @@
 import { AIProviderConfig, AIModelConfig } from '@/types';
+import { v4 as uuidv4 } from 'uuid';
 import { useStore } from '@/store/useStore';
 import { generateImage } from 'ai';
 import { createImageModel } from '@/lib/aiProviders';
@@ -63,7 +64,7 @@ export async function sendImageGenRequest(
 ): Promise<string> {
   const { providerConfig, modelConfig } = resolveModel(modelRef);
   const abortController = new AbortController();
-  const taskId = crypto.randomUUID();
+  const taskId = uuidv4();
 
   taskRegistry.set(taskId, { abortController });
 

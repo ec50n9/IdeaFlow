@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
+import { v4 as uuidv4 } from 'uuid';
 import { useStore } from '@/store/useStore';
 import {
   Dialog,
@@ -112,7 +113,7 @@ export function ImageGenPanel({ open, onOpenChange, selectedAtomNodes }: ImageGe
       const imageUrl = match ? match[1] : result;
 
       setResults((prev) => [
-        { id: crypto.randomUUID(), imageUrl, prompt: prompt.trim() },
+        { id: uuidv4(), imageUrl, prompt: prompt.trim() },
         ...prev,
       ]);
       setPrompt('');
@@ -150,7 +151,7 @@ export function ImageGenPanel({ open, onOpenChange, selectedAtomNodes }: ImageGe
     const offsetY = existingImages.length * 30;
 
     addNode({
-      id: crypto.randomUUID(),
+      id: uuidv4(),
       type: 'cardNode',
       position: { x: baseX + 100, y: baseY + offsetY },
       data: {
