@@ -5,10 +5,9 @@ export class GenericAdapter implements ModelAdapter {
 
   async chat(params: AdapterParams): Promise<AdapterResult> {
     const endpoint = params.endpoint || 'https://api.openai.com/v1/chat/completions';
-    const body = {
-      model: params.model,
-      prompt: params.prompt,
-    };
+    const body = params.messages
+      ? { model: params.model, messages: params.messages }
+      : { model: params.model, prompt: params.prompt };
 
     const response = await fetch(endpoint, {
       method: 'POST',

@@ -23,4 +23,4 @@ export function getAdapter(protocol: ModelProtocol): ModelAdapter {
 }
 
 export { TEXT_INSTRUCTION } from './types';
-export type { AdapterParams, AdapterResult, OnChunk, ModelAdapter } from './types';
+export type { AdapterParams, AdapterResult, OnChunk, ModelAdapter, ChatMessage } from './types';

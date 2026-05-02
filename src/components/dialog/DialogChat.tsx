@@ -29,8 +29,7 @@ import {
 } from 'lucide-react';
 import { ContextItem, DialogMessage, CardNode } from '@/types';
 import { sendDialogMessage, extractContentAsAtom } from '@/lib/engine';
-import { getAvailableModels } from '@/lib/modelsFilter';
-import { v4 as uuidv4 } from 'uuid';
+import { ModelCapabilityTags } from '@/components/shared/ModelCapabilityTags';
 import Markdown from 'react-markdown';
 
 // ─────────────────────────────────────────────────────────────
@@ -74,19 +73,14 @@ export function DialogChat({ open, onOpenChange, dialogCardId }: DialogChatProps
   const [items, setItems] = useState<ContextItem[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [isSending, setIsSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
   const [showOrchestrator, setShowOrchestrator] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  // 模型选择
-  const [selectedModel, setSelectedModel] = useState<string>('');
-
   useEffect(() => {
     if (open && dialogCard) {
       setItems(dialogCard.data.items || []);
-      if (dialogCard.data.modelRef) {
-        setSelectedModel(dialogCard.data.modelRef);
-      }
     }
   }, [open, dialogCard]);
 
@@ -107,18 +101,17 @@ export function DialogChat({ open, onOpenChange, dialogCardId }: DialogChatProps
     return map;
   }, [items, nodes]);
 
-  // 可用模型
-  const availableModels = useMemo(() => {
-    return getAvailableModels(items, nodes, providers);
-  }, [items, nodes, providers]);
-
   // 编排操作
+  const handleSaveItems = (itemsToSave: ContextItem[]) => {
+    updateNodeData(dialogCardId, { items: itemsToSave });
+  };
+
   const handleMoveUp = (index: number) => {
     if (index <= 0) return;
     const newItems = [...items];
     [newItems[index - 1], newItems[index]] = [newItems[index], newItems[index - 1]];
     setItems(newItems);
-    handleSaveItems();
+    handleSaveItems(newItems);
   };
 
   const handleMoveDown = (index: number) => {
@@ -126,50 +119,64 @@ export function DialogChat({ open, onOpenChange, dialogCardId }: DialogChatProps
     const newItems = [...items];
     [newItems[index], newItems[index + 1]] = [newItems[index + 1], newItems[index]];
     setItems(newItems);
-    handleSaveItems();
+    handleSaveItems(newItems);
   };
 
   const handleToggleEnabled = (index: number) => {
     const newItems = [...items];
     newItems[index] = { ...newItems[index], enabled: newItems[index].enabled !== false ? false : true };
     setItems(newItems);
-    handleSaveItems();
+    handleSaveItems(newItems);
   };
 
   const handleRoleChange = (index: number, role: 'system' | 'user' | 'assistant') => {
     const newItems = [...items];
     newItems[index] = { ...newItems[index], role };
     setItems(newItems);
-    handleSaveItems();
+    handleSaveItems(newItems);
   };
 
   const handleRemoveItem = (index: number) => {
+    const itemToRemove = items[index];
+    if (!itemToRemove) return;
+
+    // 本地即时更新
     const newItems = items.filter((_, i) => i !== index);
     setItems(newItems);
-    handleSaveItems();
-  };
 
-  const handleSaveItems = () => {
-    updateNodeData(dialogCardId, { items });
+    // 删除对应的 edge，由 syncDialogItems 自动同步 dialog 的 items
+    const newEdges = edges.filter(
+      (e) =>
+        !(
+          e.source === itemToRemove.sourceCardId &&
+          e.target === dialogCardId &&
+          e.sourceHandle === 'bottom-source' &&
+          e.targetHandle === 'top-target'
+        )
+    );
+    setEdges(newEdges);
   };
 
   // 发送消息
   const handleSend = useCallback(async () => {
-    if (!inputValue.trim() || !selectedModel || !dialogCard) return;
+    const modelRef = dialogCard?.data.modelRef;
+    if (!inputValue.trim() || !modelRef || !dialogCard) return;
 
     // 先保存 items（确保上下文最新）
-    handleSaveItems();
+    handleSaveItems(items);
 
+    setSendError(null);
     setIsSending(true);
     try {
-      await sendDialogMessage(dialogCardId, inputValue.trim(), selectedModel, dialogCard.data.outputType || 'text');
+      await sendDialogMessage(dialogCardId, inputValue.trim(), modelRef, dialogCard.data.outputType || 'text');
       setInputValue('');
     } catch (e) {
-      console.error('发送消息失败:', e);
+      const msg = e instanceof Error ? e.message : '发送失败，请重试';
+      setSendError(msg);
     } finally {
       setIsSending(false);
     }
-  }, [inputValue, selectedModel, dialogCard, dialogCardId, items]);
+  }, [inputValue, dialogCard, dialogCardId, items]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -228,31 +235,12 @@ export function DialogChat({ open, onOpenChange, dialogCardId }: DialogChatProps
             )}
           </DialogTitle>
           <div className="flex items-center gap-2">
-            {/* 模型选择器 */}
-            <select
-              value={selectedModel}
-              onChange={(e) => setSelectedModel(e.target.value)}
-              className="text-xs border rounded-lg px-2 py-1 bg-background outline-none focus:ring-1 focus:ring-primary"
-            >
-              <option value="">选择模型</option>
-              {availableModels.map(({ provider, model, disabled, reason }) => {
-                const modelRef = `${provider.key}/${model.model}`;
-                return (
-                  <option key={modelRef} value={modelRef} disabled={disabled}>
-                    {provider.name} / {model.model} {disabled ? `(${reason})` : ''}
-                  </option>
-                );
-              })}
-            </select>
-            {/* 输出类型切换 */}
-            <select
-              value={dialogCard.data.outputType || 'text'}
-              onChange={(e) => updateNodeData(dialogCardId, { outputType: e.target.value as 'text' | 'image' })}
-              className="text-xs border rounded-lg px-2 py-1 bg-background outline-none focus:ring-1 focus:ring-primary"
-            >
-              <option value="text">文本</option>
-              <option value="image">图像</option>
-            </select>
+            {/* 模型展示（已锁定不可更改） */}
+            <div className="text-xs border rounded-lg px-2 py-1 bg-muted/50 text-muted-foreground truncate max-w-[200px]">
+              {dialogCard.data.modelRef || '未选择模型'}
+            </div>
+            {/* 模型能力标签 */}
+            <ModelCapabilityTags modelRef={dialogCard.data.modelRef} providers={providers} />
           </div>
         </DialogHeader>
 
@@ -436,28 +424,34 @@ export function DialogChat({ open, onOpenChange, dialogCardId }: DialogChatProps
 
         {/* 输入区 */}
         <div className="shrink-0 border-t bg-background px-4 py-3">
+          {sendError && (
+            <div className="mb-2 text-xs text-red-500 bg-red-50 dark:bg-red-900/20 rounded-lg px-3 py-1.5 flex items-center gap-1.5">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+              {sendError}
+            </div>
+          )}
           <div className="flex gap-2">
             <textarea
               ref={inputRef}
               value={inputValue}
               onChange={handleInput}
               onKeyDown={handleKeyDown}
-              placeholder={selectedModel ? '输入消息...' : '请先选择模型'}
-              disabled={!selectedModel || isSending}
+              placeholder={dialogCard.data.modelRef ? '输入消息...' : '请先选择模型'}
+              disabled={!dialogCard.data.modelRef || isSending}
               className="flex-1 min-h-[40px] max-h-[120px] resize-none rounded-xl border bg-muted/50 px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-primary disabled:opacity-50"
               rows={1}
             />
             <Button
               size="icon"
               onClick={handleSend}
-              disabled={!inputValue.trim() || !selectedModel || isSending}
+              disabled={!inputValue.trim() || !dialogCard.data.modelRef || isSending}
               className="shrink-0 h-auto rounded-xl"
             >
               {isSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
             </Button>
           </div>
-          {!selectedModel && (
-            <p className="text-[10px] text-muted-foreground mt-1.5">请在顶部选择模型后开始对话</p>
+          {!dialogCard.data.modelRef && (
+            <p className="text-[10px] text-muted-foreground mt-1.5">该对话卡片未绑定模型，无法发送消息</p>
           )}
         </div>
       </DialogContent>

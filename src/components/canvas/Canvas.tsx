@@ -54,6 +54,7 @@ export const Canvas = () => {
   const onConnect = useStore((state) => state.onConnect);
   const addNode = useStore((state) => state.addNode);
   const deleteNode = useStore((state) => state.deleteNode);
+  const setEdges = useStore((state) => state.setEdges);
   const hasUserCreatedNode = useStore((state) => state.hasUserCreatedNode);
   const setHasUserCreatedNode = useStore((state) => state.setHasUserCreatedNode);
 
@@ -147,23 +148,19 @@ export const Canvas = () => {
     setHasUserCreatedNode(true);
   }, [addNode, setHasUserCreatedNode]);
 
+  const openDialogCreation = useStore((state) => state.openDialogCreation);
+
   const handleCreateDialog = useCallback(() => {
     if (!pendingPosition.current) return;
-    addNode({
-      id: uuidv4(),
-      type: 'cardNode',
-      position: pendingPosition.current,
-      data: {
-        cardType: 'dialog',
-        sourceCardIds: [],
-        items: [],
-        messages: [],
-        outputType: 'text',
-        status: 'idle',
-      },
-    });
+
+    // 收集当前选中的原子卡片
+    const selectedAtomIds = nodes
+      .filter((n) => n.selected && n.data.cardType === 'atom')
+      .map((n) => n.id);
+
+    openDialogCreation(selectedAtomIds, pendingPosition.current);
     setHasUserCreatedNode(true);
-  }, [addNode, setHasUserCreatedNode]);
+  }, [nodes, openDialogCreation, setHasUserCreatedNode]);
 
   const handlePaneTouchEnd = useCallback(
     (event: React.TouchEvent) => {
@@ -369,6 +366,8 @@ export const Canvas = () => {
         onCreateAtom={handleCreateAtom}
         onCreateDialog={handleCreateDialog}
       />
+
+
     </div>
   );
 };

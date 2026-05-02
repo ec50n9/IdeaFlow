@@ -1,10 +1,63 @@
-import { CardNode, AIProviderConfig, AIModelConfig, ContextItem } from '@/types';
+import { CardNode, AIProviderConfig, AIModelConfig, ContextItem, AtomType } from '@/types';
 
 export interface ModelFilterResult {
   provider: AIProviderConfig;
   model: AIModelConfig;
   disabled?: boolean;
   reason?: string;
+}
+
+interface FilterContext {
+  hasImage: boolean;
+  hasDocument: boolean;
+  estimatedTokens: number;
+}
+
+/**
+ * 核心过滤逻辑（SSOT）
+ */
+function evaluateModelAgainstContext(
+  model: AIModelConfig,
+  context: FilterContext
+): { disabled: boolean; reason: string } {
+  let disabled = false;
+  let reason = '';
+
+  // 规则 A：包含图片但模型不支持 vision 且不支持图生图且不支持文生图
+  if (context.hasImage && !model.supportsVision && !model.supportsImageToImage && !model.supportsTextToImage) {
+    disabled = true;
+    reason = '不支持视觉/图像能力';
+  }
+
+  // 规则 B：包含文件但模型不支持 document
+  if (context.hasDocument && !model.supportsDocument) {
+    disabled = true;
+    reason = '不支持文档解析';
+  }
+
+  // 规则 C：上下文超过窗口限制
+  if (context.estimatedTokens > model.contextWindow) {
+    disabled = true;
+    reason = '上下文过长';
+  }
+
+  return { disabled, reason };
+}
+
+function buildResults(
+  providers: AIProviderConfig[],
+  context: FilterContext
+): ModelFilterResult[] {
+  const results: ModelFilterResult[] = [];
+
+  for (const provider of providers) {
+    for (const model of provider.models) {
+      const { disabled, reason } = evaluateModelAgainstContext(model, context);
+      results.push({ provider, model, disabled: disabled || undefined, reason: reason || undefined });
+    }
+  }
+
+  return results;
 }
 
 /**
@@ -16,37 +69,22 @@ export function getAvailableModels(
   allProviders: AIProviderConfig[]
 ): ModelFilterResult[] {
   const { hasImage, hasDocument, estimatedTokens } = analyzeContext(items, allNodes);
+  return buildResults(allProviders, { hasImage, hasDocument, estimatedTokens });
+}
 
-  const results: ModelFilterResult[] = [];
+/**
+ * 根据原子卡片类型列表直接分析，过滤出可用模型（用于创建对话卡片时）
+ */
+export function getAvailableModelsFromAtomTypes(
+  atomTypes: AtomType[],
+  allProviders: AIProviderConfig[]
+): ModelFilterResult[] {
+  const hasImage = atomTypes.includes('image');
+  const hasDocument = atomTypes.includes('file');
+  // 创建时不做 token 估算（无内容）
+  const estimatedTokens = 0;
 
-  for (const provider of allProviders) {
-    for (const model of provider.models) {
-      let disabled = false;
-      let reason = '';
-
-      // 规则 A：包含图片但模型不支持 vision 且不支持图生图
-      if (hasImage && !model.supportsVision && !model.supportsImageToImage) {
-        disabled = true;
-        reason = '不支持视觉输入';
-      }
-
-      // 规则 B：包含文件但模型不支持 document
-      if (hasDocument && !model.supportsDocument) {
-        disabled = true;
-        reason = '不支持文档解析';
-      }
-
-      // 规则 C：上下文超过窗口限制
-      if (estimatedTokens > model.contextWindow) {
-        disabled = true;
-        reason = '上下文过长';
-      }
-
-      results.push({ provider, model, disabled, reason });
-    }
-  }
-
-  return results;
+  return buildResults(allProviders, { hasImage, hasDocument, estimatedTokens });
 }
 
 /**

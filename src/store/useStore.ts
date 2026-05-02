@@ -13,8 +13,64 @@ import {
   applyNodeChanges,
   applyEdgeChanges,
 } from '@xyflow/react';
-import { CardNode, CardNodeData, AIProviderConfig, DialogMessage } from '@/types';
+import { CardNode, CardNodeData, AIProviderConfig, DialogMessage, ContextItem } from '@/types';
 import { v4 as uuidv4 } from 'uuid';
+import { canConnectAtomToDialog } from '@/lib/connectionRules';
+
+/**
+ * 根据 edges 动态同步所有 dialog 卡片的 sourceCardIds 和 items。
+ * 连线存在 = 引用存在；连线删除 = 引用解除。
+ * 保留现有 item 的 role / enabled 等用户自定义设置。
+ */
+function syncDialogItems(nodes: CardNode[], edges: Edge[]): CardNode[] {
+  return nodes.map((node) => {
+    if (node.data.cardType !== 'dialog') return node;
+
+    // 找到所有连入该 dialog 的原子卡片（bottom-source → top-target）
+    const connectedAtomIds = edges
+      .filter(
+        (e) =>
+          e.target === node.id &&
+          e.targetHandle === 'top-target' &&
+          e.sourceHandle === 'bottom-source'
+      )
+      .map((e) => e.source);
+
+    const existingItems = node.data.items || [];
+
+    // 保留仍然连线的 item（保留用户的 role / enabled / 排序设置）
+    const preservedItems = existingItems.filter((item) =>
+      connectedAtomIds.includes(item.sourceCardId)
+    );
+
+    // 为新增的连线创建默认 item
+    const preservedIds = new Set(preservedItems.map((i) => i.sourceCardId));
+    const newItems: ContextItem[] = connectedAtomIds
+      .filter((id) => !preservedIds.has(id))
+      .map((sourceCardId) => ({
+        id: uuidv4(),
+        sourceCardId,
+        role: 'user' as const,
+        enabled: true,
+      }));
+
+    const items = [...preservedItems, ...newItems];
+
+    return {
+      ...node,
+      data: {
+        ...node.data,
+        sourceCardIds: connectedAtomIds,
+        items,
+      },
+    } as CardNode;
+  });
+}
+
+interface PendingDialogCreation {
+  position: { x: number; y: number };
+  atomNodeIds: string[];
+}
 
 interface AppState {
   nodes: CardNode[];
@@ -41,6 +97,12 @@ interface AppState {
 
   hasUserCreatedNode: boolean;
   setHasUserCreatedNode: (v: boolean) => void;
+
+  /** 待创建的对话卡片（模型选择中） */
+  pendingDialogCreation: PendingDialogCreation | null;
+  openDialogCreation: (atomNodeIds: string[], position: { x: number; y: number }) => void;
+  confirmDialogCreation: (modelRef: string) => void;
+  cancelDialogCreation: () => void;
 }
 
 export const useStore = create<AppState>()(
@@ -70,15 +132,39 @@ export const useStore = create<AppState>()(
       },
 
       onEdgesChange: (changes: EdgeChange[]) => {
-        set({
-          edges: applyEdgeChanges(changes, get().edges),
-        });
+        const newEdges = applyEdgeChanges(changes, get().edges);
+        get().setEdges(newEdges);
       },
 
       onConnect: (connection: Connection) => {
-        set({
-          edges: addEdge(connection, get().edges),
-        });
+        const { nodes, edges, providers } = get();
+        const sourceNode = nodes.find((n) => n.id === connection.source);
+        const targetNode = nodes.find((n) => n.id === connection.target);
+
+        // ── 原子卡片 → 对话卡片 的接入连接 ──
+        const isAtomToDialog =
+          sourceNode?.data.cardType === 'atom' &&
+          targetNode?.data.cardType === 'dialog' &&
+          connection.sourceHandle === 'bottom-source' &&
+          connection.targetHandle === 'top-target';
+
+        if (isAtomToDialog) {
+          const atomType = sourceNode.data.atomType!;
+          const modelRef = targetNode.data.modelRef;
+
+          const check = canConnectAtomToDialog(atomType, modelRef || '', providers);
+          if (!check.allowed) {
+            console.warn(`[连接拒绝] ${check.reason}`);
+            return; // 拒绝连接，不创建 edge
+          }
+
+          // 创建 edge，由 setEdges 自动同步 dialog 的 items
+          get().setEdges(addEdge(connection, edges));
+          return;
+        }
+
+        // ── 其他连接：直接放行 ──
+        get().setEdges(addEdge(connection, edges));
       },
 
       addNode: (node: CardNode) => {
@@ -102,14 +188,19 @@ export const useStore = create<AppState>()(
       },
 
       deleteNode: (id: string) => {
-        set({
-          nodes: get().nodes.filter((n) => n.id !== id),
-          edges: get().edges.filter((e) => e.source !== id && e.target !== id),
-        });
+        const newNodes = get().nodes.filter((n) => n.id !== id);
+        const newEdges = get().edges.filter((e) => e.source !== id && e.target !== id);
+        set({ nodes: newNodes });
+        get().setEdges(newEdges);
       },
 
       setNodes: (nodes: CardNode[]) => set({ nodes }),
-      setEdges: (edges: Edge[]) => set({ edges }),
+      setEdges: (edges: Edge[]) => {
+        set((state) => ({
+          edges,
+          nodes: syncDialogItems(state.nodes, edges),
+        }));
+      },
 
       addDialogMessage: (dialogId: string, message: DialogMessage) => {
         set({
@@ -169,10 +260,83 @@ export const useStore = create<AppState>()(
 
       hasUserCreatedNode: false,
       setHasUserCreatedNode: (v: boolean) => set({ hasUserCreatedNode: v }),
+
+      pendingDialogCreation: null,
+
+      openDialogCreation: (atomNodeIds: string[], position: { x: number; y: number }) => {
+        set({ pendingDialogCreation: { atomNodeIds, position } });
+      },
+
+      confirmDialogCreation: (modelRef: string) => {
+        const { pendingDialogCreation, nodes, edges } = get();
+        if (!pendingDialogCreation) return;
+
+        const { atomNodeIds, position } = pendingDialogCreation;
+        const dialogId = uuidv4();
+
+        const items: ContextItem[] = atomNodeIds.map((sourceCardId) => ({
+          id: uuidv4(),
+          sourceCardId,
+          role: 'user' as const,
+          enabled: true,
+        }));
+
+        // 如果有多于一个卡片，第一个设为 system（保持原有行为）
+        if (items.length > 1) {
+          items[0].role = 'system';
+        }
+
+        const dialogNode: CardNode = {
+          id: dialogId,
+          type: 'cardNode',
+          position,
+          data: {
+            cardType: 'dialog',
+            sourceCardIds: atomNodeIds,
+            items,
+            messages: [],
+            outputType: 'text',
+            modelRef,
+            status: 'idle',
+          },
+        };
+
+        // 创建节点
+        const newNodes = [...nodes, dialogNode];
+
+        // 创建连线
+        const edgesToAdd: Edge[] = atomNodeIds.map((cid) => ({
+          id: `e-${cid}-${dialogId}`,
+          source: cid,
+          sourceHandle: 'bottom-source',
+          target: dialogId,
+          targetHandle: 'top-target',
+        }));
+        const newEdges: Edge[] = atomNodeIds.length > 0 ? [...edges, ...edgesToAdd] : edges;
+
+        // 锁定源卡片
+        const lockedNodes = newNodes.map((node) => {
+          if (atomNodeIds.includes(node.id)) {
+            return { ...node, data: { ...node.data, isLocked: true } } as CardNode;
+          }
+          return node;
+        });
+
+        set({
+          nodes: lockedNodes,
+          pendingDialogCreation: null,
+          hasUserCreatedNode: true,
+        });
+        get().setEdges(newEdges);
+      },
+
+      cancelDialogCreation: () => {
+        set({ pendingDialogCreation: null });
+      },
     }),
     {
       name: 'mindflow-storage',
-      version: 4,
+      version: 5,
       migrate: (persistedState: any, version) => {
         try {
           const state = persistedState as any;
@@ -264,6 +428,11 @@ export const useStore = create<AppState>()(
             state.nodes = newNodes;
             state.edges = newEdges;
             delete state.actions;
+          }
+
+          // v4 -> v5: dialog 模型选择语义硬化（无数据结构变更）
+          if (version < 5) {
+            // 无需迁移，字段已兼容
           }
 
           // v3 -> v4: context + execution → dialog

@@ -1,4 +1,5 @@
-import type { AdapterParams, AdapterResult, OnChunk, ModelAdapter } from './types';
+import type { AdapterParams, AdapterResult, OnChunk, ModelAdapter, ChatMessage } from './types';
+import { isTextPart } from './types';
 
 async function parseSSEResponse(
   response: Response,
@@ -70,20 +71,34 @@ export class AnthropicAdapter implements ModelAdapter {
     };
   }
 
-  private buildBody(model: string, prompt: string, stream: boolean = false): object {
-    return {
+  private buildBody(model: string, messages: ChatMessage[], stream: boolean = false): object {
+    const systemMessage = messages.find((m) => m.role === 'system');
+    const chatMessages = messages.filter((m) => m.role !== 'system');
+
+    const body: Record<string, unknown> = {
       model,
       max_tokens: 4096,
-      messages: [
-        { role: 'user', content: prompt }
-      ],
+      messages: chatMessages,
       stream,
     };
+
+    if (systemMessage) {
+      body.system =
+        typeof systemMessage.content === 'string'
+          ? systemMessage.content
+          : systemMessage.content
+              .filter(isTextPart)
+              .map((c) => c.text)
+              .join('\n');
+    }
+
+    return body;
   }
 
   async chat(params: AdapterParams): Promise<AdapterResult> {
     const endpoint = this.getEndpoint();
-    const body = this.buildBody(params.model, params.prompt);
+    const messages = params.messages || [{ role: 'user', content: params.prompt || '' }];
+    const body = this.buildBody(params.model, messages);
 
     const response = await fetch(endpoint, {
       method: 'POST',
@@ -103,7 +118,8 @@ export class AnthropicAdapter implements ModelAdapter {
 
   async chatStream(params: AdapterParams, onChunk: OnChunk): Promise<AdapterResult> {
     const endpoint = this.getEndpoint();
-    const body = this.buildBody(params.model, params.prompt, true);
+    const messages = params.messages || [{ role: 'user', content: params.prompt || '' }];
+    const body = this.buildBody(params.model, messages, true);
 
     const response = await fetch(endpoint, {
       method: 'POST',

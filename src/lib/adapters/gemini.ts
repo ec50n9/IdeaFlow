@@ -1,5 +1,6 @@
 import { GoogleGenAI, Type } from '@google/genai';
-import type { AdapterParams, AdapterResult, OnChunk, ModelAdapter } from './types';
+import type { AdapterParams, AdapterResult, OnChunk, ModelAdapter, ChatMessage } from './types';
+import { isTextPart } from './types';
 
 function normalizeJsonText(text: string): any {
   text = text.replace(/^```json\s*/, '').replace(/\s*```$/, '').trim();
@@ -29,9 +30,26 @@ export class GeminiAdapter implements ModelAdapter {
     };
   }
 
+  private messagesToString(messages?: ChatMessage[]): string {
+    if (!messages) return '';
+    return messages
+      .map((m) => {
+        const role = m.role === 'assistant' ? 'Assistant' : m.role === 'system' ? 'System' : 'User';
+        const text =
+          typeof m.content === 'string'
+            ? m.content
+            : m.content
+                .filter(isTextPart)
+                .map((c) => c.text)
+                .join('\n');
+        return `[${role}]\n${text}`;
+      })
+      .join('\n\n');
+  }
+
   async chat(params: AdapterParams): Promise<AdapterResult> {
     const googleAi = this.createClient(params.apiKey);
-    const contents = params.prompt;
+    const contents = params.messages ? this.messagesToString(params.messages) : (params.prompt || '');
     const config = this.buildTextConfig();
 
     const response = await googleAi.models.generateContent({
@@ -50,7 +68,7 @@ export class GeminiAdapter implements ModelAdapter {
 
   async chatStream(params: AdapterParams, onChunk: OnChunk): Promise<AdapterResult> {
     const googleAi = this.createClient(params.apiKey);
-    const contents = params.prompt;
+    const contents = params.messages ? this.messagesToString(params.messages) : (params.prompt || '');
     const config = this.buildTextConfig();
 
     const stream = await googleAi.models.generateContentStream({
@@ -79,7 +97,7 @@ export class GeminiAdapter implements ModelAdapter {
 
     const response = await googleAi.models.generateContent({
       model: params.model,
-      contents: params.prompt,
+      contents: params.prompt || '',
       config: {
         responseModalities: ['IMAGE'],
       },
@@ -90,7 +108,10 @@ export class GeminiAdapter implements ModelAdapter {
     }
 
     const parts = response.candidates?.[0]?.content?.parts || [];
-    const imagePart = parts.find((p: any) => p.inlineData);
+    const imagePart = parts.find((p): p is typeof p & { inlineData: { data: string; mimeType?: string } } => {
+      const candidate = p as Record<string, unknown>;
+      return !!candidate.inlineData;
+    });
 
     if (imagePart?.inlineData?.data) {
       const mimeType = imagePart.inlineData.mimeType || 'image/png';
@@ -113,7 +134,10 @@ export class GeminiAdapter implements ModelAdapter {
   async editImage(params: AdapterParams & { images: string[] }): Promise<AdapterResult> {
     const googleAi = this.createClient(params.apiKey);
 
-    const parts: any[] = [{ text: params.prompt }];
+    const parts: Array<
+      | { text: string }
+      | { inlineData: { mimeType: string; data: string } }
+    > = [{ text: params.prompt || '' }];
 
     for (const img of params.images) {
       let base64 = img;
@@ -154,7 +178,10 @@ export class GeminiAdapter implements ModelAdapter {
     }
 
     const resultParts = response.candidates?.[0]?.content?.parts || [];
-    const imagePart = resultParts.find((p: any) => p.inlineData);
+    const imagePart = resultParts.find((p): p is typeof p & { inlineData: { data: string; mimeType?: string } } => {
+      const candidate = p as Record<string, unknown>;
+      return !!candidate.inlineData;
+    });
 
     if (imagePart?.inlineData?.data) {
       const mimeType = imagePart.inlineData.mimeType || 'image/png';

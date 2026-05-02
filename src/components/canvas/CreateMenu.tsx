@@ -46,7 +46,7 @@ export function CreateMenu({ open, onOpenChange, onCreateAtom, onCreateDialog }:
             </div>
             <div className="text-left">
               <div className="text-sm font-medium">对话卡片</div>
-              <div className="text-[11px] text-muted-foreground">创建一个空的 AI 对话工作区</div>
+              <div className="text-[11px] text-muted-foreground">创建 AI 对话工作区（需先选择模型）</div>
             </div>
           </Button>
         </div>

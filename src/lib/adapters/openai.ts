@@ -84,11 +84,10 @@ export class OpenAIImagesAdapter implements ModelAdapter {
 
   async chat(params: AdapterParams): Promise<AdapterResult> {
     const endpoint = this.resolveChatEndpoint(params.endpoint);
+    const messages = params.messages || [{ role: 'user', content: params.prompt || '' }];
     const body = {
       model: params.model,
-      messages: [
-        { role: 'user', content: params.prompt }
-      ]
+      messages,
     };
 
     const response = await fetch(endpoint, {
@@ -109,11 +108,10 @@ export class OpenAIImagesAdapter implements ModelAdapter {
 
   async chatStream(params: AdapterParams, onChunk: OnChunk): Promise<AdapterResult> {
     const endpoint = this.resolveChatEndpoint(params.endpoint);
+    const messages = params.messages || [{ role: 'user', content: params.prompt || '' }];
     const body = {
       model: params.model,
-      messages: [
-        { role: 'user', content: params.prompt }
-      ],
+      messages,
       stream: true,
     };
 
@@ -173,7 +171,7 @@ export class OpenAIImagesAdapter implements ModelAdapter {
     const endpoint = this.resolveImageEditEndpoint(params.endpoint);
     const formData = new FormData();
     formData.append('model', params.model);
-    formData.append('prompt', params.prompt);
+    formData.append('prompt', params.prompt || '');
 
     for (let i = 0; i < params.images.length; i++) {
       const img = params.images[i];

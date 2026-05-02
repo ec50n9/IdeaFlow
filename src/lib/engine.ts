@@ -1,8 +1,10 @@
 import { CardNode, AIProviderConfig, AIModelConfig, CallMode, DialogMessage } from '@/types';
 import { v4 as uuidv4 } from 'uuid';
 import { useStore } from '@/store/useStore';
-import { getAdapter, type OnChunk, TEXT_INSTRUCTION } from '@/lib/adapters';
+import { getAdapter, type OnChunk, TEXT_INSTRUCTION, type ChatMessage } from '@/lib/adapters';
 import { extractAndStoreImages } from '@/lib/imageUtils';
+import { ASSISTANT_LOADING_PLACEHOLDER } from '@/lib/constants';
+import { isTextPart } from '@/lib/adapters/types';
 
 const taskRegistry = new Map<string, {
   abortController: AbortController;
@@ -111,6 +113,7 @@ export interface CallAIOptions {
   onChunk?: OnChunk;
   images?: string[];
   mode?: CallMode;
+  messages?: ChatMessage[];
 }
 
 export async function callAI(
@@ -139,6 +142,7 @@ export async function callAI(
   const params = {
     model: modelConfig.model,
     prompt,
+    messages: options?.messages,
     apiKey: providerConfig.apiKey,
     endpoint: providerConfig.endpoint,
     signal: options?.signal,
@@ -149,7 +153,33 @@ export async function callAI(
 
   switch (mode) {
     case 'chat': {
-      const chatParams = { ...params, prompt: params.prompt + TEXT_INSTRUCTION };
+      const chatParams = { ...params };
+      if (chatParams.messages) {
+        // 深拷贝，避免修改原始数组
+        chatParams.messages = chatParams.messages.map((m) => ({
+          ...m,
+          content:
+            typeof m.content === 'string'
+              ? m.content
+              : m.content.map((c) => ({ ...c })),
+        }));
+        const lastMsg = chatParams.messages[chatParams.messages.length - 1];
+        if (lastMsg && lastMsg.role === 'user') {
+          if (typeof lastMsg.content === 'string') {
+            lastMsg.content += TEXT_INSTRUCTION;
+          } else if (Array.isArray(lastMsg.content)) {
+            const textParts = lastMsg.content.filter(isTextPart);
+            if (textParts.length > 0) {
+              const lastTextPart = textParts[textParts.length - 1];
+              lastTextPart.text += TEXT_INSTRUCTION;
+            } else {
+              lastMsg.content.push({ type: 'text', text: TEXT_INSTRUCTION });
+            }
+          }
+        }
+      } else if (chatParams.prompt) {
+        chatParams.prompt += TEXT_INSTRUCTION;
+      }
       if (options?.onChunk && adapter.supportsStreaming) {
         result = await adapter.chatStream(chatParams, options.onChunk);
       } else {
@@ -171,10 +201,13 @@ export async function callAI(
 }
 
 // ─────────────────────────────────────────────────────────────
-// 组装 Prompt（从 Dialog 卡片）
+// 组装 Messages（从 Dialog 卡片）
 // ─────────────────────────────────────────────────────────────
 
-function buildPromptForDialog(dialogId: string, userContent: string): { prompt: string; images: string[] } {
+function buildMessagesForDialog(
+  dialogId: string,
+  userContent: string
+): { messages: ChatMessage[]; images: string[]; prompt: string } {
   const store = useStore.getState();
   const dialog = store.nodes.find((n) => n.id === dialogId && n.data.cardType === 'dialog');
   if (!dialog) {
@@ -183,9 +216,9 @@ function buildPromptForDialog(dialogId: string, userContent: string): { prompt: 
 
   const items = dialog.data.items || [];
   const messages = dialog.data.messages || [];
-
-  const parts: string[] = [];
   const images: string[] = [];
+
+  const resultMessages: ChatMessage[] = [];
 
   // 1. 编排的上下文项（enabled 的）
   for (const item of items) {
@@ -197,32 +230,47 @@ function buildPromptForDialog(dialogId: string, userContent: string): { prompt: 
     const content = card.data.content || '';
     if (card.data.atomType === 'image') {
       images.push(content);
-      parts.push(`[图片: ${item.role}]`);
+      resultMessages.push({
+        role: item.role,
+        content: [{ type: 'image_url', image_url: { url: content } }],
+      });
     } else {
-      parts.push(`[${item.role}]\n${content}`);
+      resultMessages.push({
+        role: item.role,
+        content,
+      });
     }
   }
 
   // 2. 历史对话（排除占位和未完成的 assistant 消息）
   const historyMessages = messages.filter(
-    (m) => m.content.trim().length > 0 && !(m.role === 'assistant' && m.content === '生成中...')
+    (m) => m.content.trim().length > 0 && !(m.role === 'assistant' && m.content === ASSISTANT_LOADING_PLACEHOLDER)
   );
-  if (historyMessages.length > 0) {
-    parts.push('--- 历史对话 ---');
-    for (const msg of historyMessages) {
-      const roleLabel = msg.role === 'user' ? 'User' : msg.role === 'assistant' ? 'Assistant' : 'System';
-      parts.push(`${roleLabel}: ${msg.content}`);
-    }
+  for (const msg of historyMessages) {
+    resultMessages.push({
+      role: msg.role,
+      content: msg.content,
+    });
   }
 
   // 3. 当前用户消息
-  parts.push('--- 当前 ---');
-  parts.push(`User: ${userContent}`);
+  resultMessages.push({
+    role: 'user',
+    content: userContent,
+  });
 
-  return {
-    prompt: parts.join('\n\n'),
-    images,
-  };
+  // 4. 图片生成用的简化 prompt（不包含历史对话，只包含原子卡片文本 + 当前输入）
+  const promptParts: string[] = [];
+  for (const item of items) {
+    if (item.enabled === false) continue;
+    const card = store.nodes.find((n) => n.id === item.sourceCardId && n.data.cardType === 'atom');
+    if (!card || card.data.atomType === 'image') continue;
+    promptParts.push(card.data.content || '');
+  }
+  promptParts.push(userContent);
+  const prompt = promptParts.join('\n\n');
+
+  return { messages: resultMessages, images, prompt };
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -253,15 +301,15 @@ export async function sendDialogMessage(
   };
   store.addDialogMessage(dialogId, userMessage);
 
-  // 2. 构建 prompt
-  const { prompt, images } = buildPromptForDialog(dialogId, userContent);
+  // 2. 构建 messages / prompt
+  const { messages, images, prompt } = buildMessagesForDialog(dialogId, userContent);
 
   // 3. 创建 assistant 占位消息
   const assistantMessageId = uuidv4();
   const assistantMessage: DialogMessage = {
     id: assistantMessageId,
     role: 'assistant',
-    content: outputType === 'image' ? '生成中...' : '',
+    content: outputType === 'image' ? ASSISTANT_LOADING_PLACEHOLDER : '',
     createdAt: Date.now(),
   };
   store.addDialogMessage(dialogId, assistantMessage);
@@ -286,6 +334,7 @@ export async function sendDialogMessage(
       onChunk: outputType === 'text' ? onChunk : undefined,
       images: images.length > 0 ? images : undefined,
       mode,
+      messages,
     });
 
     // 处理结果中的图片
