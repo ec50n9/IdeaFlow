@@ -43,7 +43,8 @@ export function resolveModel(modelRef: string): { providerConfig: AIProviderConf
 export async function sendImageGenRequest(
   modelRef: string,
   prompt: string,
-  referenceImages?: string[]
+  referenceImages?: string[],
+  signal?: AbortSignal
 ): Promise<string> {
   const { providerConfig, modelConfig } = resolveModel(modelRef);
 
@@ -68,7 +69,7 @@ export async function sendImageGenRequest(
             model: modelConfig.model,
             prompt,
             images: referenceImages,
-            signal: undefined
+            signal
           });
         }
         case 'openai-responses': {
@@ -79,7 +80,7 @@ export async function sendImageGenRequest(
             prompt,
             images: referenceImages,
             imageModel: modelConfig.imageModel,
-            signal: undefined
+            signal
           });
         }
         case 'gemini': {
@@ -89,7 +90,7 @@ export async function sendImageGenRequest(
             model: modelConfig.model,
             prompt,
             images: referenceImages,
-            signal: undefined
+            signal
           });
         }
         default: {
@@ -115,7 +116,7 @@ export async function sendImageGenRequest(
           const { image } = await generateImage({
             model: imageModel,
             prompt,
-            abortSignal: undefined
+            abortSignal: signal
           });
           const dataUrl = `data:image/png;base64,${image.base64}`;
           return `![Generated Image](${dataUrl})`;
@@ -127,7 +128,7 @@ export async function sendImageGenRequest(
             model: modelConfig.model,
             prompt,
             imageModel: modelConfig.imageModel,
-            signal: undefined
+            signal
           });
         }
         case 'gemini': {
@@ -136,7 +137,7 @@ export async function sendImageGenRequest(
             endpoint: providerConfig.endpoint,
             model: modelConfig.model,
             prompt,
-            signal: undefined
+            signal
           });
         }
         default: {

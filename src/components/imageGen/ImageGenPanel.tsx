@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { useStore } from '@/store/useStore';
 import {
@@ -46,6 +46,7 @@ export function ImageGenPanel({ open, onOpenChange, selectedAtomNodes }: ImageGe
   const [results, setResults] = useState<ImageGenResult[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   // 解析参考图 + 拼装文本卡片内容到提示词
   useEffect(() => {
@@ -105,9 +106,10 @@ export function ImageGenPanel({ open, onOpenChange, selectedAtomNodes }: ImageGe
 
     setError(null);
     setIsGenerating(true);
+    abortControllerRef.current = new AbortController();
 
     try {
-      const result = await sendImageGenRequest(modelRef, prompt.trim(), referenceImages);
+      const result = await sendImageGenRequest(modelRef, prompt.trim(), referenceImages, abortControllerRef.current.signal);
       // 从 markdown 图片语法中提取 URL
       const match = result.match(/!\[.*?\]\((.+?)\)/);
       const imageUrl = match ? match[1] : result;
@@ -118,12 +120,21 @@ export function ImageGenPanel({ open, onOpenChange, selectedAtomNodes }: ImageGe
       ]);
       setPrompt('');
     } catch (e) {
-      const msg = e instanceof Error ? e.message : '生成失败，请重试';
-      setError(msg);
+      if (e instanceof DOMException && e.name === 'AbortError') {
+        // 用户取消，不显示错误
+      } else {
+        const msg = e instanceof Error ? e.message : '生成失败，请重试';
+        setError(msg);
+      }
     } finally {
+      abortControllerRef.current = null;
       setIsGenerating(false);
     }
   }, [modelRef, prompt, referenceImages, isGenerating]);
+
+  const handleCancel = () => {
+    abortControllerRef.current?.abort();
+  };
 
   const handleRemoveReference = (index: number) => {
     setReferenceImages((prev) => prev.filter((_, i) => i !== index));
@@ -236,6 +247,9 @@ export function ImageGenPanel({ open, onOpenChange, selectedAtomNodes }: ImageGe
             <div className="flex flex-col items-center justify-center py-12 gap-3">
               <Loader2 className="w-8 h-8 animate-spin text-purple-500" />
               <p className="text-sm text-muted-foreground">生成中...</p>
+              <Button variant="outline" size="sm" onClick={handleCancel}>
+                取消
+              </Button>
             </div>
           )}
 
