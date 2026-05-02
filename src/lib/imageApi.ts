@@ -126,7 +126,7 @@ export async function openaiEditImage(params: {
   images: string[];
   signal?: AbortSignal;
 }): Promise<string> {
-  const endpoint = params.endpoint || 'https://api.openai.com/v1/images/edits';
+  const baseUrl = (params.endpoint || 'https://api.openai.com/v1').replace(/\/$/, '');
   const formData = new FormData();
   formData.append('model', params.model);
   formData.append('prompt', params.prompt || '');
@@ -145,7 +145,7 @@ export async function openaiEditImage(params: {
     }
   }
 
-  const response = await fetch(endpoint, {
+  const response = await fetch(`${baseUrl}/images/edits`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${params.apiKey}` },
     body: formData,
@@ -283,14 +283,14 @@ export async function responsesGenerateImage(params: {
   imageModel?: string;
   signal?: AbortSignal;
 }): Promise<string> {
-  const endpoint = params.endpoint || 'https://api.openai.com/v1/responses';
+  const baseUrl = (params.endpoint || 'https://api.openai.com/v1').replace(/\/$/, '');
   const body = {
     model: params.model,
     input: [{ role: 'user', content: params.prompt }],
     tools: [{ type: 'image_generation', model: params.imageModel }],
   };
 
-  const response = await fetch(endpoint, {
+  const response = await fetch(`${baseUrl}/responses`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -320,7 +320,7 @@ export async function responsesEditImage(params: {
   imageModel?: string;
   signal?: AbortSignal;
 }): Promise<string> {
-  const endpoint = params.endpoint || 'https://api.openai.com/v1/responses';
+  const baseUrl = (params.endpoint || 'https://api.openai.com/v1').replace(/\/$/, '');
   const content: Array<Record<string, string>> = [{ type: 'input_text', text: params.prompt || '' }];
 
   for (const img of params.images) {
@@ -333,7 +333,7 @@ export async function responsesEditImage(params: {
     tools: [{ type: 'image_generation', model: params.imageModel, action: 'edit' }],
   };
 
-  const response = await fetch(endpoint, {
+  const response = await fetch(`${baseUrl}/responses`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

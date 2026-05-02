@@ -20,7 +20,7 @@ import {
   Send,
 } from 'lucide-react';
 import { CardNode } from '@/types';
-import { sendImageGenRequest, cancelImageGenTask } from '@/lib/imageEngine';
+import { sendImageGenRequest } from '@/lib/imageEngine';
 import { resolveImageUrl } from '@/lib/fileUtils';
 
 interface ImageGenResult {
@@ -119,18 +119,11 @@ export function ImageGenPanel({ open, onOpenChange, selectedAtomNodes }: ImageGe
       setPrompt('');
     } catch (e) {
       const msg = e instanceof Error ? e.message : '生成失败，请重试';
-      if (msg !== '已取消') {
-        setError(msg);
-      }
+      setError(msg);
     } finally {
       setIsGenerating(false);
     }
   }, [modelRef, prompt, referenceImages, isGenerating]);
-
-  const handleCancel = () => {
-    cancelImageGenTask('current');
-    setIsGenerating(false);
-  };
 
   const handleRemoveReference = (index: number) => {
     setReferenceImages((prev) => prev.filter((_, i) => i !== index));
@@ -243,9 +236,6 @@ export function ImageGenPanel({ open, onOpenChange, selectedAtomNodes }: ImageGe
             <div className="flex flex-col items-center justify-center py-12 gap-3">
               <Loader2 className="w-8 h-8 animate-spin text-purple-500" />
               <p className="text-sm text-muted-foreground">生成中...</p>
-              <Button variant="outline" size="sm" onClick={handleCancel}>
-                取消
-              </Button>
             </div>
           )}
 

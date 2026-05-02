@@ -1,31 +1,14 @@
 import { AIProviderConfig, AIModelConfig } from '@/types';
-import { v4 as uuidv4 } from 'uuid';
 import { useStore } from '@/store/useStore';
 import { generateImage } from 'ai';
 import { createImageModel } from '@/lib/aiProviders';
 import {
+  openaiEditImage,
   geminiGenerateImage,
   geminiEditImage,
-  openaiEditImage,
   responsesGenerateImage,
   responsesEditImage,
 } from '@/lib/imageApi';
-
-const taskRegistry = new Map<string, {
-  abortController: AbortController;
-}>();
-
-export function cancelImageGenTask(taskId: string) {
-  const task = taskRegistry.get(taskId);
-  if (task) {
-    task.abortController.abort();
-  }
-  clearTask(taskId);
-}
-
-function clearTask(taskId: string) {
-  taskRegistry.delete(taskId);
-}
 
 // ─────────────────────────────────────────────────────────────
 // 模型解析（底层）
@@ -63,10 +46,6 @@ export async function sendImageGenRequest(
   referenceImages?: string[]
 ): Promise<string> {
   const { providerConfig, modelConfig } = resolveModel(modelRef);
-  const abortController = new AbortController();
-  const taskId = uuidv4();
-
-  taskRegistry.set(taskId, { abortController });
 
   try {
     const hasReferenceImages = referenceImages && referenceImages.length > 0;
@@ -89,7 +68,7 @@ export async function sendImageGenRequest(
             model: modelConfig.model,
             prompt,
             images: referenceImages,
-            signal: abortController.signal,
+            signal: undefined
           });
         }
         case 'openai-responses': {
@@ -100,7 +79,7 @@ export async function sendImageGenRequest(
             prompt,
             images: referenceImages,
             imageModel: modelConfig.imageModel,
-            signal: abortController.signal,
+            signal: undefined
           });
         }
         case 'gemini': {
@@ -110,7 +89,7 @@ export async function sendImageGenRequest(
             model: modelConfig.model,
             prompt,
             images: referenceImages,
-            signal: abortController.signal,
+            signal: undefined
           });
         }
         default: {
@@ -136,7 +115,7 @@ export async function sendImageGenRequest(
           const { image } = await generateImage({
             model: imageModel,
             prompt,
-            abortSignal: abortController.signal,
+            abortSignal: undefined
           });
           const dataUrl = `data:image/png;base64,${image.base64}`;
           return `![Generated Image](${dataUrl})`;
@@ -148,7 +127,7 @@ export async function sendImageGenRequest(
             model: modelConfig.model,
             prompt,
             imageModel: modelConfig.imageModel,
-            signal: abortController.signal,
+            signal: undefined
           });
         }
         case 'gemini': {
@@ -157,7 +136,7 @@ export async function sendImageGenRequest(
             endpoint: providerConfig.endpoint,
             model: modelConfig.model,
             prompt,
-            signal: abortController.signal,
+            signal: undefined
           });
         }
         default: {
@@ -166,11 +145,6 @@ export async function sendImageGenRequest(
       }
     }
   } catch (error) {
-    if (error instanceof DOMException && error.name === 'AbortError') {
-      throw new Error('已取消');
-    }
     throw error;
-  } finally {
-    clearTask(taskId);
   }
 }
