@@ -1,6 +1,6 @@
 import { Node, Edge } from '@xyflow/react';
 
-export type CardType = 'atom' | 'context' | 'execution';
+export type CardType = 'atom' | 'dialog';
 
 export type AtomType = 'text' | 'image' | 'file';
 
@@ -8,6 +8,15 @@ export interface ContextItem {
   id: string;
   sourceCardId: string;
   role: 'system' | 'user' | 'assistant';
+  /** 是否启用（参与本次对话） */
+  enabled?: boolean;
+}
+
+export interface DialogMessage {
+  id: string;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  createdAt: number;
 }
 
 export interface CardNodeData extends Record<string, unknown> {
@@ -18,27 +27,24 @@ export interface CardNodeData extends Record<string, unknown> {
   atomType?: AtomType;
   /** 内容：文本内容 / 图片URL / 文件引用 */
   content?: string;
-  /** 被聚合到上下文后锁定，修改时自动克隆 */
+  /** 被聚合到对话后锁定，修改时自动克隆 */
   isLocked?: boolean;
   /** 来源：manual=用户创建, ai=模型生成 */
   sourceType?: 'manual' | 'ai';
 
-  // ===== context 卡片专属 =====
-  /** 聚合了哪些 atom 卡片 */
+  // ===== dialog 卡片专属 =====
+  /** 连入的原子卡片 ID */
   sourceCardIds?: string[];
-  /** 排序后的上下文项 */
+  /** 编排后的上下文项 */
   items?: ContextItem[];
-
-  // ===== execution 卡片专属 =====
-  /** 基于哪个 context 执行 */
-  contextCardId?: string;
-  /** 模型引用: "providerKey/modelName" */
+  /** 对话历史消息 */
+  messages?: DialogMessage[];
+  /** 当前使用的模型引用: "providerKey/modelName" */
   modelRef?: string;
-  /** 输出类型 */
-  outputType?: 'text' | 'image' | 'audio';
-  /** 关联的结果卡片 ID */
-  resultCardId?: string;
-  /** 执行状态 */
+  /** 当前输出类型 */
+  outputType?: 'text' | 'image';
+
+  // ===== 通用状态 =====
   status?: 'idle' | 'processing' | 'error' | 'success';
 
   // ===== UI 状态 =====

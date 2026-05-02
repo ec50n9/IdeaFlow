@@ -6,24 +6,20 @@ import Markdown from 'react-markdown';
 import { cn } from '@/lib/utils';
 import {
   Edit3,
-  User,
-  X,
   Trash2,
   Lock,
   FileText,
   Image as ImageIcon,
   File,
-  Settings2,
-  Zap,
-  Play,
+  MessageSquare,
   Loader2,
   AlertCircle,
   CheckCircle2,
+  BotMessageSquare,
 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
-import { cancelTask, reexecute } from '@/lib/engine';
 import { resolveImageUrl } from '@/lib/imageUtils';
-import { ContextBuilderDialog } from '@/components/execution/ContextBuilderDialog';
+import { DialogChat } from '@/components/dialog/DialogChat';
 
 // ─────────────────────────────────────────────────────────────
 // Markdown 图片组件
@@ -59,7 +55,7 @@ function MarkdownImage({ src, alt }: { src?: string; alt?: string }) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Atom 类型图标
+// 原子类型图标
 // ─────────────────────────────────────────────────────────────
 
 function AtomTypeIcon({ atomType, className }: { atomType?: string; className?: string }) {
@@ -85,6 +81,9 @@ function areEqual(prev: NodeProps<CardNode>, next: NodeProps<CardNode>) {
   if (prev.data.status !== next.data.status) return false;
   if (prev.data.isLocked !== next.data.isLocked) return false;
   if (prev.data.isEditing !== next.data.isEditing) return false;
+  // dialog 专用比较
+  if (prev.data.messages?.length !== next.data.messages?.length) return false;
+  if (prev.data.sourceCardIds?.length !== next.data.sourceCardIds?.length) return false;
   return true;
 }
 
@@ -96,13 +95,14 @@ export const CardNodeComponent = memo(({ id, data, selected }: NodeProps<CardNod
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(data.content || '');
   const [editSize, setEditSize] = useState<{ width: number; height: number } | null>(null);
-  const [contextDialogOpen, setContextDialogOpen] = useState(false);
-  const [isReexecuting, setIsReexecuting] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
 
   const updateNodeData = useStore((state) => state.updateNodeData);
   const deleteNode = useStore((state) => state.deleteNode);
   const addNode = useStore((state) => state.addNode);
   const nodes = useStore((state) => state.nodes);
+  const edges = useStore((state) => state.edges);
+  const setEdges = useStore((state) => state.setEdges);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const nodeRef = useRef<HTMLDivElement>(null);
 
@@ -133,12 +133,13 @@ export const CardNodeComponent = memo(({ id, data, selected }: NodeProps<CardNod
       if (data.isLocked) {
         // 自动克隆
         const cloneId = uuidv4();
+        const currentNode = nodes.find((n) => n.id === id);
         const clone: CardNode = {
           id: cloneId,
           type: 'cardNode',
           position: {
-            x: (id as any).position?.x ?? 0 + 20,
-            y: (id as any).position?.y ?? 0 + 20,
+            x: (currentNode?.position.x ?? 0) + 30,
+            y: (currentNode?.position.y ?? 0) + 30,
           },
           data: {
             cardType: 'atom',
@@ -149,15 +150,8 @@ export const CardNodeComponent = memo(({ id, data, selected }: NodeProps<CardNod
             isLocked: false,
           },
         };
-        // 获取当前节点位置
-        const currentNode = nodes.find((n) => n.id === id);
-        if (currentNode) {
-          clone.position = {
-            x: currentNode.position.x + 30,
-            y: currentNode.position.y + 30,
-          };
-        }
         addNode(clone);
+        setEdges([...edges, { id: `e-${id}-${cloneId}`, source: id, sourceHandle: 'right-source', target: cloneId, targetHandle: 'left-target' }]);
         // 在新克隆上进入编辑模式
         setTimeout(() => {
           const cloneEl = document.querySelector(`[data-id="${cloneId}"]`);
@@ -177,10 +171,10 @@ export const CardNodeComponent = memo(({ id, data, selected }: NodeProps<CardNod
         }
         setIsEditing(true);
       }
-    } else if (data.cardType === 'context') {
-      setContextDialogOpen(true);
+    } else if (data.cardType === 'dialog') {
+      setDialogOpen(true);
     }
-  }, [data, id, nodes, addNode]);
+  }, [data, id, nodes, edges, addNode, setEdges]);
 
   const handleBlur = useCallback(() => {
     setIsEditing(false);
@@ -203,20 +197,6 @@ export const CardNodeComponent = memo(({ id, data, selected }: NodeProps<CardNod
     e.target.style.height = 'auto';
     e.target.style.height = `${e.target.scrollHeight}px`;
   }, []);
-
-  // ── 重新执行 ──
-
-  const handleReexecute = useCallback(async () => {
-    if (data.cardType !== 'execution') return;
-    setIsReexecuting(true);
-    try {
-      await reexecute(id);
-    } catch (e) {
-      console.error('重新执行失败:', e);
-    } finally {
-      setIsReexecuting(false);
-    }
-  }, [data.cardType, id]);
 
   // ── 渲染 atom 卡片 ──
 
@@ -254,7 +234,7 @@ export const CardNodeComponent = memo(({ id, data, selected }: NodeProps<CardNod
           {data.isLocked && (
             <div
               className="flex items-center gap-1 bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 text-[10px] font-medium px-2 py-0.5 rounded-full shadow-sm border border-slate-200 dark:border-slate-700"
-              title="该卡片已参与执行，修改将自动克隆"
+              title="该卡片已参与对话，修改将自动克隆"
             >
               <Lock className="w-3 h-3" />
               <span>已锁定</span>
@@ -323,33 +303,55 @@ export const CardNodeComponent = memo(({ id, data, selected }: NodeProps<CardNod
     );
   };
 
-  // ── 渲染 context 卡片 ──
+  // ── 渲染 dialog 卡片 ──
 
-  const renderContextCard = () => {
+  const renderDialogCard = () => {
     const itemCount = data.sourceCardIds?.length || 0;
+    const messageCount = data.messages?.length || 0;
+    const lastMessage = data.messages?.[data.messages.length - 1];
+    const status = data.status || 'idle';
+
+    const statusConfig = {
+      idle: { icon: MessageSquare, color: 'text-slate-500', bg: 'bg-slate-100 border-slate-200 dark:bg-slate-800 dark:border-slate-700' },
+      processing: { icon: Loader2, color: 'text-primary', bg: 'bg-primary/10 border-primary/30' },
+      error: { icon: AlertCircle, color: 'text-red-500', bg: 'bg-red-50 border-red-200 dark:bg-red-900/30 dark:border-red-800' },
+      success: { icon: CheckCircle2, color: 'text-emerald-500', bg: 'bg-emerald-50 border-emerald-200 dark:bg-emerald-900/30 dark:border-emerald-800' },
+    }[status];
+    const StatusIcon = statusConfig.icon;
 
     return (
       <div
         className={cn(
-          "w-[200px] bg-card border rounded-xl shadow-sm p-3 text-center transition-all cursor-pointer",
-          selected ? 'border-primary ring-2 ring-primary/20 shadow-md' : 'border-border'
+          "w-[220px] border rounded-xl shadow-sm p-3 text-center transition-all cursor-pointer",
+          selected ? 'border-primary ring-2 ring-primary/20 shadow-md' : 'border-border',
+          statusConfig.bg
         )}
         onDoubleClick={handleDoubleClick}
       >
         <div className="flex items-center justify-center gap-1.5 text-sm font-medium">
-          <Settings2 className="w-4 h-4 text-primary" />
-          <span>上下文</span>
+          <StatusIcon className={cn("w-4 h-4", statusConfig.color, status === 'processing' && 'animate-spin')} />
+          <span className={statusConfig.color}>对话</span>
         </div>
-        <div className="mt-1 text-[11px] text-muted-foreground">
-          聚合了 {itemCount} 个卡片
+
+        <div className="mt-1.5 text-[11px] text-muted-foreground space-y-0.5">
+          <div>连入 {itemCount} 个卡片 · {Math.floor(messageCount / 2)} 轮对话</div>
+          {data.modelRef && (
+            <div className="truncate">{data.modelRef}</div>
+          )}
         </div>
+
+        {/* 最后一条消息预览 */}
+        {lastMessage && (
+          <div className="mt-2 text-[10px] text-muted-foreground truncate px-1 py-1 bg-background/50 rounded">
+            {lastMessage.role === 'user' ? '🧑' : '🤖'} {lastMessage.content.slice(0, 40)}
+            {lastMessage.content.length > 40 ? '...' : ''}
+          </div>
+        )}
+
+        {/* 连接指示器 */}
         <div className="mt-2 flex justify-center gap-1">
           {data.sourceCardIds?.slice(0, 5).map((cid) => (
-            <div
-              key={cid}
-              className="w-2 h-2 rounded-full bg-primary/40"
-              title={cid}
-            />
+            <div key={cid} className="w-2 h-2 rounded-full bg-primary/40" title={cid} />
           ))}
           {(data.sourceCardIds?.length || 0) > 5 && (
             <span className="text-[10px] text-muted-foreground">+{(data.sourceCardIds?.length || 0) - 5}</span>
@@ -372,67 +374,6 @@ export const CardNodeComponent = memo(({ id, data, selected }: NodeProps<CardNod
     );
   };
 
-  // ── 渲染 execution 卡片 ──
-
-  const renderExecutionCard = () => {
-    const status = data.status || 'idle';
-    const statusConfig = {
-      idle: { icon: Zap, color: 'text-slate-500', bg: 'bg-slate-100 border-slate-200' },
-      processing: { icon: Loader2, color: 'text-primary', bg: 'bg-primary/10 border-primary/30' },
-      error: { icon: AlertCircle, color: 'text-red-500', bg: 'bg-red-50 border-red-200' },
-      success: { icon: CheckCircle2, color: 'text-emerald-500', bg: 'bg-emerald-50 border-emerald-200' },
-    }[status];
-    const StatusIcon = statusConfig.icon;
-
-    return (
-      <div
-        className={cn(
-          "w-[180px] border rounded-xl shadow-sm p-2.5 text-center transition-all",
-          selected ? 'border-primary ring-2 ring-primary/20 shadow-md' : 'border-border',
-          statusConfig.bg
-        )}
-      >
-        <div className="flex items-center justify-center gap-1.5 text-xs font-medium">
-          <StatusIcon className={cn("w-3.5 h-3.5", statusConfig.color, status === 'processing' && 'animate-spin')} />
-          <span className={statusConfig.color}>执行</span>
-        </div>
-        <div className="mt-1 text-[10px] text-muted-foreground truncate">
-          {data.modelRef || '未选择模型'}
-        </div>
-        <div className="mt-1 text-[10px] text-muted-foreground">
-          输出: {data.outputType === 'image' ? '图像' : data.outputType === 'audio' ? '音频' : '文本'}
-        </div>
-
-        {/* 选中时的操作按钮 */}
-        {selected && (
-          <div className="absolute -bottom-9 left-1/2 -translate-x-1/2 flex items-center gap-1 bg-background/95 backdrop-blur-md border border-border shadow-md rounded-xl p-1 z-50 whitespace-nowrap">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                handleReexecute();
-              }}
-              disabled={isReexecuting}
-              className="flex items-center gap-1 text-[10px] px-2 py-1 rounded-lg hover:bg-muted transition-colors disabled:opacity-50"
-            >
-              <Play className="w-3 h-3" />
-              {isReexecuting ? '执行中...' : '重新执行'}
-            </button>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                deleteNode(id);
-              }}
-              className="flex items-center gap-1 text-[10px] px-2 py-1 rounded-lg hover:bg-red-50 text-red-500 transition-colors"
-            >
-              <Trash2 className="w-3 h-3" />
-              删除
-            </button>
-          </div>
-        )}
-      </div>
-    );
-  };
-
   // ── 主渲染 ──
 
   return (
@@ -447,14 +388,13 @@ export const CardNodeComponent = memo(({ id, data, selected }: NodeProps<CardNod
       <Handle type="source" position={Position.Right} id="right-source" className="w-2.5 h-2.5 border-2 bg-background border-primary" />
 
       {data.cardType === 'atom' && renderAtomCard()}
-      {data.cardType === 'context' && renderContextCard()}
-      {data.cardType === 'execution' && renderExecutionCard()}
+      {data.cardType === 'dialog' && renderDialogCard()}
 
-      {data.cardType === 'context' && (
-        <ContextBuilderDialog
-          open={contextDialogOpen}
-          onOpenChange={setContextDialogOpen}
-          contextCardId={id}
+      {data.cardType === 'dialog' && (
+        <DialogChat
+          open={dialogOpen}
+          onOpenChange={setDialogOpen}
+          dialogCardId={id}
         />
       )}
     </div>

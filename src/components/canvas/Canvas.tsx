@@ -1,4 +1,4 @@
-import { useCallback, useRef, useEffect, useState } from 'react';
+import { useCallback, useRef, useEffect, useState, useMemo } from 'react';
 import {
   ReactFlow,
   useReactFlow,
@@ -14,6 +14,7 @@ import { useStore } from '@/store/useStore';
 import { CardNodeComponent } from './CardNode';
 import { v4 as uuidv4 } from 'uuid';
 import { isInputElement } from '@/lib/utils';
+import { CreateMenu } from './CreateMenu';
 
 const nodeTypes = {
   cardNode: CardNodeComponent,
@@ -26,8 +27,7 @@ function SelectedNodeStats() {
   if (selected.length === 0) return null;
 
   const atomNodes = selected.filter((n) => n.data.cardType === 'atom');
-  const contextNodes = selected.filter((n) => n.data.cardType === 'context');
-  const executionNodes = selected.filter((n) => n.data.cardType === 'execution');
+  const dialogNodes = selected.filter((n) => n.data.cardType === 'dialog');
 
   const textCount = atomNodes.filter((n) => n.data.atomType === 'text').length;
   const imageCount = atomNodes.filter((n) => n.data.atomType === 'image').length;
@@ -37,8 +37,7 @@ function SelectedNodeStats() {
   if (textCount) parts.push(`${textCount} 文本`);
   if (imageCount) parts.push(`${imageCount} 图片`);
   if (fileCount) parts.push(`${fileCount} 文件`);
-  if (contextNodes.length) parts.push(`${contextNodes.length} 上下文`);
-  if (executionNodes.length) parts.push(`${executionNodes.length} 执行`);
+  if (dialogNodes.length) parts.push(`${dialogNodes.length} 对话`);
 
   return (
     <p className="text-[11px] text-muted-foreground font-mono">
@@ -59,12 +58,58 @@ export const Canvas = () => {
   const setHasUserCreatedNode = useStore((state) => state.setHasUserCreatedNode);
 
   const { screenToFlowPosition } = useReactFlow();
+
+  // ── 边高亮：选中节点时，相连的边高亮显示 ──
+  const selectedNodeIds = useMemo(
+    () => new Set(nodes.filter((n) => n.selected).map((n) => n.id)),
+    [nodes]
+  );
+
+  const hasSelection = selectedNodeIds.size > 0;
+
+  const highlightedEdges = useMemo(() => {
+    return edges.map((edge) => {
+      const isConnected =
+        selectedNodeIds.has(edge.source) || selectedNodeIds.has(edge.target);
+
+      if (!hasSelection) {
+        // 没有选中任何节点时，恢复默认样式
+        return { ...edge, style: { ...edge.style, opacity: 1 }, animated: false };
+      }
+
+      if (isConnected) {
+        // 与选中节点相连的边：高亮（加粗 + 恢复透明度）
+        return {
+          ...edge,
+          style: {
+            ...edge.style,
+            strokeWidth: 3,
+            opacity: 1,
+          },
+          animated: true,
+        };
+      }
+
+      // 未相连的边：变暗
+      return {
+        ...edge,
+        style: {
+          ...edge.style,
+          opacity: 0.12,
+        },
+        animated: false,
+      };
+    });
+  }, [edges, selectedNodeIds, hasSelection]);
   const lastClickTime = useRef<number>(0);
   const lastTouchTime = useRef<number>(0);
   const lastTouchPos = useRef<{ x: number; y: number } | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
-  const dragCounter = useRef(0); // 处理嵌套元素导致的 dragenter/dragleave 闪烁
+  const dragCounter = useRef(0);
+  const [createMenuOpen, setCreateMenuOpen] = useState(false);
+  const pendingPosition = useRef<{ x: number; y: number } | null>(null);
 
+  // ── 双击空白处弹出创建菜单 ──
   const handlePaneClick = useCallback(
     (event: React.MouseEvent<Element>) => {
       const now = Date.now();
@@ -76,26 +121,49 @@ export const Canvas = () => {
           x: event.clientX,
           y: event.clientY,
         });
-
-        addNode({
-          id: uuidv4(),
-          type: 'cardNode',
-          position,
-          data: {
-            cardType: 'atom',
-            atomType: 'text',
-            content: '',
-            status: 'idle',
-            sourceType: 'manual',
-            isEditing: true,
-          },
-        });
-        setHasUserCreatedNode(true);
+        pendingPosition.current = position;
+        setCreateMenuOpen(true);
       }
       lastClickTime.current = now;
     },
-    [screenToFlowPosition, addNode, setHasUserCreatedNode]
+    [screenToFlowPosition]
   );
+
+  const handleCreateAtom = useCallback(() => {
+    if (!pendingPosition.current) return;
+    addNode({
+      id: uuidv4(),
+      type: 'cardNode',
+      position: pendingPosition.current,
+      data: {
+        cardType: 'atom',
+        atomType: 'text',
+        content: '',
+        status: 'idle',
+        sourceType: 'manual',
+        isEditing: true,
+      },
+    });
+    setHasUserCreatedNode(true);
+  }, [addNode, setHasUserCreatedNode]);
+
+  const handleCreateDialog = useCallback(() => {
+    if (!pendingPosition.current) return;
+    addNode({
+      id: uuidv4(),
+      type: 'cardNode',
+      position: pendingPosition.current,
+      data: {
+        cardType: 'dialog',
+        sourceCardIds: [],
+        items: [],
+        messages: [],
+        outputType: 'text',
+        status: 'idle',
+      },
+    });
+    setHasUserCreatedNode(true);
+  }, [addNode, setHasUserCreatedNode]);
 
   const handlePaneTouchEnd = useCallback(
     (event: React.TouchEvent) => {
@@ -117,28 +185,15 @@ export const Canvas = () => {
             x: touch.clientX,
             y: touch.clientY,
           });
-
-          addNode({
-            id: uuidv4(),
-            type: 'cardNode',
-            position,
-            data: {
-              cardType: 'atom',
-              atomType: 'text',
-              content: '',
-              status: 'idle',
-              sourceType: 'manual',
-              isEditing: true,
-            },
-          });
-          setHasUserCreatedNode(true);
+          pendingPosition.current = position;
+          setCreateMenuOpen(true);
         }
       }
 
       lastTouchTime.current = now;
       lastTouchPos.current = { x: touch.clientX, y: touch.clientY };
     },
-    [screenToFlowPosition, addNode, setHasUserCreatedNode]
+    [screenToFlowPosition]
   );
 
   // ── 拖拽文件到画布 ──
@@ -200,7 +255,6 @@ export const Canvas = () => {
         };
         reader.readAsDataURL(file);
       } else {
-        // 非图片文件：先读取为 text（小文件）或只存文件名（大文件）
         const isText = file.type.startsWith('text/') ||
           file.name.endsWith('.md') ||
           file.name.endsWith('.json') ||
@@ -227,7 +281,6 @@ export const Canvas = () => {
           };
           reader.readAsText(file);
         } else {
-          // 大文件或二进制文件：只存引用信息
           addNode({
             id: uuidv4(),
             type: 'cardNode',
@@ -273,7 +326,7 @@ export const Canvas = () => {
     >
       <ReactFlow
         nodes={nodes}
-        edges={edges}
+        edges={highlightedEdges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
@@ -291,7 +344,7 @@ export const Canvas = () => {
         <Panel position="top-left" className="bg-background/80 backdrop-blur-md px-4 py-3 rounded-xl shadow-sm border m-4 flex flex-col gap-1 z-50 pointer-events-none">
           <h1 className="font-semibold tracking-tight text-lg">思维流引擎</h1>
           {!hasUserCreatedNode && (
-            <p className="text-sm text-muted-foreground">双击画布添加卡片，或拖拽文件到此处</p>
+            <p className="text-sm text-muted-foreground">双击画布创建卡片，或拖拽文件到此处</p>
           )}
           <SelectedNodeStats />
         </Panel>
@@ -308,6 +361,14 @@ export const Canvas = () => {
           </div>
         </div>
       )}
+
+      {/* 创建菜单 */}
+      <CreateMenu
+        open={createMenuOpen}
+        onOpenChange={setCreateMenuOpen}
+        onCreateAtom={handleCreateAtom}
+        onCreateDialog={handleCreateDialog}
+      />
     </div>
   );
 };

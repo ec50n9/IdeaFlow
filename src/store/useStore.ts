@@ -13,7 +13,7 @@ import {
   applyNodeChanges,
   applyEdgeChanges,
 } from '@xyflow/react';
-import { CardNode, CardNodeData, AIProviderConfig, ContextItem } from '@/types';
+import { CardNode, CardNodeData, AIProviderConfig, DialogMessage } from '@/types';
 import { v4 as uuidv4 } from 'uuid';
 
 interface AppState {
@@ -30,6 +30,9 @@ interface AppState {
   deleteNode: (id: string) => void;
   setNodes: (nodes: CardNode[]) => void;
   setEdges: (edges: Edge[]) => void;
+
+  addDialogMessage: (dialogId: string, message: DialogMessage) => void;
+  updateDialogMessage: (dialogId: string, messageId: string, content: string) => void;
 
   addProvider: (provider: AIProviderConfig) => void;
   updateProvider: (id: string, provider: Partial<AIProviderConfig>) => void;
@@ -108,6 +111,38 @@ export const useStore = create<AppState>()(
       setNodes: (nodes: CardNode[]) => set({ nodes }),
       setEdges: (edges: Edge[]) => set({ edges }),
 
+      addDialogMessage: (dialogId: string, message: DialogMessage) => {
+        set({
+          nodes: get().nodes.map((node) => {
+            if (node.id === dialogId && node.data.cardType === 'dialog') {
+              const messages = [...(node.data.messages || []), message];
+              return {
+                ...node,
+                data: { ...node.data, messages },
+              } as CardNode;
+            }
+            return node;
+          }) as CardNode[],
+        });
+      },
+
+      updateDialogMessage: (dialogId: string, messageId: string, content: string) => {
+        set({
+          nodes: get().nodes.map((node) => {
+            if (node.id === dialogId && node.data.cardType === 'dialog') {
+              const messages = (node.data.messages || []).map((m) =>
+                m.id === messageId ? { ...m, content } : m
+              );
+              return {
+                ...node,
+                data: { ...node.data, messages },
+              } as CardNode;
+            }
+            return node;
+          }) as CardNode[],
+        });
+      },
+
       addProvider: (provider: AIProviderConfig) => {
         set({
           providers: [...get().providers, provider],
@@ -137,12 +172,12 @@ export const useStore = create<AppState>()(
     }),
     {
       name: 'mindflow-storage',
-      version: 3,
+      version: 4,
       migrate: (persistedState: any, version) => {
         try {
           const state = persistedState as any;
 
-          // v1 -> v2 的 migrate 已存在，保留逻辑
+          // v1 -> v2 的 migrate
           if (version < 2) {
             if (Array.isArray(state.actions)) {
               state.actions = state.actions
@@ -163,7 +198,6 @@ export const useStore = create<AppState>()(
             const oldNodes = Array.isArray(state.nodes) ? state.nodes : [];
             const oldEdges = Array.isArray(state.edges) ? state.edges : [];
 
-            // 收集需要删除的 actionNode ID
             const actionNodeIds = new Set<string>();
             const newNodes: CardNode[] = [];
 
@@ -179,12 +213,10 @@ export const useStore = create<AppState>()(
 
               if (node.type === 'ideaNode') {
                 const oldData = node.data;
-                // 推导 atomType
                 let atomType: 'text' | 'image' | 'file' = 'text';
                 const mediaType = oldData.mediaType;
                 if (mediaType === 'image') atomType = 'image';
                 else if (mediaType === 'file') atomType = 'file';
-                // mixed 默认转为 text
 
                 const newData: CardNodeData = {
                   cardType: 'atom',
@@ -195,9 +227,7 @@ export const useStore = create<AppState>()(
                   isEditing: oldData.isEditing,
                 };
 
-                // 如果是 AI 生成的，保留来源信息（简化处理）
                 if (oldData.sourceType === 'ai') {
-                  // 旧数据中的 sourceAction 等字段不再使用，仅标记为 ai 生成
                   newData.sourceType = 'ai';
                 }
 
@@ -209,7 +239,6 @@ export const useStore = create<AppState>()(
                   selected: node.selected,
                 } as CardNode);
               } else {
-                // 未知类型，尝试作为 atom 保留
                 newNodes.push({
                   id: node.id,
                   type: 'cardNode',
@@ -225,7 +254,6 @@ export const useStore = create<AppState>()(
               }
             }
 
-            // 过滤边：删除与 actionNode 相关的边
             const newEdges = oldEdges.filter((edge: any) => {
               if (!edge || typeof edge.id !== 'string') return false;
               if (actionNodeIds.has(edge.source)) return false;
@@ -235,9 +263,65 @@ export const useStore = create<AppState>()(
 
             state.nodes = newNodes;
             state.edges = newEdges;
-
-            // 删除 actions 字段
             delete state.actions;
+          }
+
+          // v3 -> v4: context + execution → dialog
+          if (version < 4) {
+            const oldNodes = Array.isArray(state.nodes) ? state.nodes : [];
+            const oldEdges = Array.isArray(state.edges) ? state.edges : [];
+
+            const executionNodeIds = new Set<string>();
+            const newNodes: CardNode[] = [];
+
+            for (const node of oldNodes) {
+              if (!node || typeof node.id !== 'string' || !node.data || typeof node.data !== 'object') {
+                continue;
+              }
+
+              if (node.data.cardType === 'execution') {
+                // execution 卡片删除
+                executionNodeIds.add(node.id);
+                continue;
+              }
+
+              if (node.data.cardType === 'context') {
+                // context → dialog
+                const oldData = node.data;
+                newNodes.push({
+                  id: node.id,
+                  type: 'cardNode',
+                  position: node.position || { x: 0, y: 0 },
+                  data: {
+                    cardType: 'dialog',
+                    sourceCardIds: oldData.sourceCardIds || [],
+                    items: (oldData.items || []).map((item: any) => ({
+                      ...item,
+                      enabled: true,
+                    })),
+                    messages: [],
+                    modelRef: oldData.modelRef,
+                    outputType: oldData.outputType || 'text',
+                    status: 'idle',
+                  },
+                  selected: node.selected,
+                } as CardNode);
+              } else {
+                // atom 和其他保留
+                newNodes.push(node as CardNode);
+              }
+            }
+
+            // 过滤边：删除与 execution 相关的边
+            const newEdges = oldEdges.filter((edge: any) => {
+              if (!edge || typeof edge.id !== 'string') return false;
+              if (executionNodeIds.has(edge.source)) return false;
+              if (executionNodeIds.has(edge.target)) return false;
+              return true;
+            });
+
+            state.nodes = newNodes;
+            state.edges = newEdges;
           }
 
           // 通用数据净化
@@ -269,7 +353,6 @@ export const useStore = create<AppState>()(
                 typeof prov.key === 'string' &&
                 Array.isArray(prov.models)
             );
-            // 为旧模型补充新字段默认值
             for (const prov of state.providers) {
               for (const model of prov.models || []) {
                 if (typeof model.supportsVision !== 'boolean') {

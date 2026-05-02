@@ -61,6 +61,9 @@ export function analyzeContext(items: ContextItem[], allNodes: CardNode[]) {
   for (const cardId of atomCardIds) {
     const card = allNodes.find((n) => n.id === cardId);
     if (!card || card.data.cardType !== 'atom') continue;
+    // 检查 item 是否被禁用
+    const item = items.find((i) => i.sourceCardId === cardId);
+    if (item && item.enabled === false) continue;
 
     if (card.data.atomType === 'image') hasImage = true;
     if (card.data.atomType === 'file') hasDocument = true;

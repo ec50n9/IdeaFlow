@@ -1,4 +1,4 @@
-import { CardNode, AIProviderConfig, AIModelConfig, CallMode } from '@/types';
+import { CardNode, AIProviderConfig, AIModelConfig, CallMode, DialogMessage } from '@/types';
 import { v4 as uuidv4 } from 'uuid';
 import { useStore } from '@/store/useStore';
 import { getAdapter, type OnChunk, TEXT_INSTRUCTION } from '@/lib/adapters';
@@ -6,7 +6,7 @@ import { extractAndStoreImages } from '@/lib/imageUtils';
 
 const taskRegistry = new Map<string, {
   abortController: AbortController;
-  nodeIds: string[];
+  nodeId: string;
 }>();
 
 export function cancelTask(taskId: string) {
@@ -20,23 +20,6 @@ export function cancelTask(taskId: string) {
 function clearTask(taskId: string) {
   const task = taskRegistry.get(taskId);
   if (!task) return;
-
-  const store = useStore.getState();
-  store.setNodes(
-    store.nodes.map((node) => {
-      if (task.nodeIds.includes(node.id)) {
-        return {
-          ...node,
-          data: {
-            ...node.data,
-            status: 'idle' as const,
-          },
-        } as CardNode;
-      }
-      return node;
-    }) as CardNode[]
-  );
-
   taskRegistry.delete(taskId);
 }
 
@@ -188,23 +171,26 @@ export async function callAI(
 }
 
 // ─────────────────────────────────────────────────────────────
-// 组装 Prompt（共享逻辑）
+// 组装 Prompt（从 Dialog 卡片）
 // ─────────────────────────────────────────────────────────────
 
-function buildPrompt(contextCardId: string): { prompt: string; images: string[]; sourceCardIds: string[] } {
+function buildPromptForDialog(dialogId: string, userContent: string): { prompt: string; images: string[] } {
   const store = useStore.getState();
-  const contextCard = store.nodes.find((n) => n.id === contextCardId && n.data.cardType === 'context');
-  if (!contextCard) {
-    throw new Error('未找到上下文卡片');
+  const dialog = store.nodes.find((n) => n.id === dialogId && n.data.cardType === 'dialog');
+  if (!dialog) {
+    throw new Error('未找到对话卡片');
   }
 
-  const items = contextCard.data.items || [];
-  const sourceCardIds = contextCard.data.sourceCardIds || [];
+  const items = dialog.data.items || [];
+  const messages = dialog.data.messages || [];
 
   const parts: string[] = [];
   const images: string[] = [];
 
+  // 1. 编排的上下文项（enabled 的）
   for (const item of items) {
+    if (item.enabled === false) continue;
+
     const card = store.nodes.find((n) => n.id === item.sourceCardId && n.data.cardType === 'atom');
     if (!card) continue;
 
@@ -217,231 +203,197 @@ function buildPrompt(contextCardId: string): { prompt: string; images: string[];
     }
   }
 
+  // 2. 历史对话（排除占位和未完成的 assistant 消息）
+  const historyMessages = messages.filter(
+    (m) => m.content.trim().length > 0 && !(m.role === 'assistant' && m.content === '生成中...')
+  );
+  if (historyMessages.length > 0) {
+    parts.push('--- 历史对话 ---');
+    for (const msg of historyMessages) {
+      const roleLabel = msg.role === 'user' ? 'User' : msg.role === 'assistant' ? 'Assistant' : 'System';
+      parts.push(`${roleLabel}: ${msg.content}`);
+    }
+  }
+
+  // 3. 当前用户消息
+  parts.push('--- 当前 ---');
+  parts.push(`User: ${userContent}`);
+
   return {
-    prompt: parts.join('\n\n---\n\n'),
+    prompt: parts.join('\n\n'),
     images,
-    sourceCardIds,
   };
 }
 
 // ─────────────────────────────────────────────────────────────
-// 执行核心：调用 AI 并更新结果卡片（共享逻辑）
+// 发送对话消息（核心：直接更新 dialog.messages）
 // ─────────────────────────────────────────────────────────────
 
-async function runExecutionCore(
-  contextCardId: string,
+export async function sendDialogMessage(
+  dialogId: string,
+  userContent: string,
   modelRef: string,
-  outputType: 'text' | 'image' | 'audio',
-  resultCardId: string,
-  abortController: AbortController
+  outputType: 'text' | 'image' = 'text'
 ) {
+  const taskId = uuidv4();
+  const abortController = new AbortController();
   const store = useStore.getState();
 
-  const { prompt, images, sourceCardIds } = buildPrompt(contextCardId);
+  const dialog = store.nodes.find((n) => n.id === dialogId && n.data.cardType === 'dialog');
+  if (!dialog) {
+    throw new Error('未找到对话卡片');
+  }
+
+  // 1. 添加用户消息
+  const userMessage: DialogMessage = {
+    id: uuidv4(),
+    role: 'user',
+    content: userContent,
+    createdAt: Date.now(),
+  };
+  store.addDialogMessage(dialogId, userMessage);
+
+  // 2. 构建 prompt
+  const { prompt, images } = buildPromptForDialog(dialogId, userContent);
+
+  // 3. 创建 assistant 占位消息
+  const assistantMessageId = uuidv4();
+  const assistantMessage: DialogMessage = {
+    id: assistantMessageId,
+    role: 'assistant',
+    content: outputType === 'image' ? '生成中...' : '',
+    createdAt: Date.now(),
+  };
+  store.addDialogMessage(dialogId, assistantMessage);
+
+  // 4. 设置 processing 状态
+  store.updateNodeData(dialogId, { status: 'processing', modelRef, outputType });
+
+  taskRegistry.set(taskId, {
+    abortController,
+    nodeId: dialogId,
+  });
 
   const mode = inferMode(resolveModel(modelRef).modelConfig, outputType);
 
   const onChunk = (chunk: string, accumulated: string) => {
-    store.updateNodeData(resultCardId, { content: accumulated });
+    store.updateDialogMessage(dialogId, assistantMessageId, accumulated);
   };
 
-  let results: any = null;
-
   try {
-    results = await callAI(prompt, modelRef, {
+    let results: any = await callAI(prompt, modelRef, {
       signal: abortController.signal,
-      onChunk,
+      onChunk: outputType === 'text' ? onChunk : undefined,
       images: images.length > 0 ? images : undefined,
       mode,
     });
-  } catch (e) {
-    if (e instanceof DOMException && e.name === 'AbortError') throw e;
-    console.error('Failed to execute AI call', e);
-    const msg = e instanceof Error ? e.message : String(e);
-    results = [{ content: `请求失败: ${msg}` }];
-  }
 
-  // 处理结果中的图片
-  if (results) {
-    results = await processResultImages(results);
-  }
-
-  // 更新结果卡片
-  if (Array.isArray(results) && results.length > 0) {
-    const content = results[0].content || '';
-    store.updateNodeData(resultCardId, {
-      content,
-      status: 'idle',
-      atomType: outputType === 'image' && content.startsWith('data:image') ? 'image' : 'text',
-    });
-  } else if (typeof results === 'string') {
-    store.updateNodeData(resultCardId, {
-      content: results,
-      status: 'idle',
-    });
-  }
-
-  // 锁定所有源卡片
-  for (const cardId of sourceCardIds) {
-    const card = store.nodes.find((n) => n.id === cardId && n.data.cardType === 'atom');
-    if (card && !card.data.isLocked) {
-      store.updateNodeData(cardId, { isLocked: true });
+    // 处理结果中的图片
+    if (results) {
+      results = await processResultImages(results);
     }
+
+    // 更新最终结果
+    let finalContent = '';
+    if (Array.isArray(results) && results.length > 0) {
+      finalContent = results[0].content || '';
+    } else if (typeof results === 'string') {
+      finalContent = results;
+    }
+
+    store.updateDialogMessage(dialogId, assistantMessageId, finalContent);
+    store.updateNodeData(dialogId, { status: 'idle' });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      console.log('Dialog message cancelled');
+      store.updateNodeData(dialogId, { status: 'idle' });
+      return;
+    }
+    console.error('Error sending dialog message:', error);
+    const msg = error instanceof Error ? error.message : String(error);
+    store.updateDialogMessage(dialogId, assistantMessageId, `请求失败: ${msg}`);
+    store.updateNodeData(dialogId, { status: 'error' });
+  } finally {
+    clearTask(taskId);
   }
 }
 
 // ─────────────────────────────────────────────────────────────
-// 上下文执行（创建新 execution + result）
+// 提取对话内容为原子卡片
 // ─────────────────────────────────────────────────────────────
 
-export async function executeContext(
-  contextCardId: string,
-  modelRef: string,
-  outputType: 'text' | 'image' | 'audio'
-) {
-  const taskId = uuidv4();
-  const abortController = new AbortController();
+export function extractContentAsAtom(
+  dialogId: string,
+  content: string,
+  atomType: 'text' | 'image' = 'text'
+): CardNode {
   const store = useStore.getState();
-
-  const contextCard = store.nodes.find((n) => n.id === contextCardId && n.data.cardType === 'context');
-  if (!contextCard) {
-    throw new Error('未找到上下文卡片');
+  const dialog = store.nodes.find((n) => n.id === dialogId && n.data.cardType === 'dialog');
+  if (!dialog) {
+    throw new Error('未找到对话卡片');
   }
 
-  // 创建 execution 卡片
-  const executionId = uuidv4();
-  const executionNode: CardNode = {
-    id: executionId,
-    type: 'cardNode',
-    position: {
-      x: contextCard.position.x + 200,
-      y: contextCard.position.y,
-    },
-    data: {
-      cardType: 'execution',
-      contextCardId,
-      modelRef,
-      outputType,
-      status: 'processing',
-    },
-  };
+  // 统计该 dialog 已提取的卡片数，用于定位
+  const extractedCount = store.edges.filter(
+    (e) => e.source === dialogId && store.nodes.some((n) => n.id === e.target && n.data.cardType === 'atom')
+  ).length;
 
-  // 创建 loading 结果卡片
-  const resultId = uuidv4();
-  const resultNode: CardNode = {
-    id: resultId,
+  const atomNode: CardNode = {
+    id: uuidv4(),
     type: 'cardNode',
     position: {
-      x: contextCard.position.x + 400,
-      y: contextCard.position.y,
+      x: dialog.position.x + 280,
+      y: dialog.position.y + extractedCount * 30,
     },
     data: {
       cardType: 'atom',
-      atomType: outputType === 'image' ? 'image' : 'text',
-      content: outputType === 'image' ? '生成中...' : '',
-      status: 'processing',
+      atomType,
+      content,
+      status: 'idle',
       sourceType: 'ai',
+      isLocked: false,
     },
   };
 
-  // 添加节点和边
-  store.setNodes([...store.nodes, executionNode, resultNode]);
-  store.setEdges([
-    ...store.edges,
-    {
-      id: `e-${contextCardId}-${executionId}`,
-      source: contextCardId,
-      target: executionId,
-    },
-    {
-      id: `e-${executionId}-${resultId}`,
-      source: executionId,
-      target: resultId,
-    },
-  ]);
+  store.addNode(atomNode);
 
-  // 更新 execution 卡片关联的结果卡片
-  store.updateNodeData(executionId, { resultCardId: resultId });
+  const newEdges = [...store.edges];
 
-  taskRegistry.set(taskId, {
-    abortController,
-    nodeIds: [executionId, resultId],
+  // 1. dialog → 新 atom（虚线，表示对话产出）
+  newEdges.push({
+    id: `e-${dialogId}-${atomNode.id}`,
+    source: dialogId,
+    sourceHandle: 'bottom-source',
+    target: atomNode.id,
+    targetHandle: 'top-target',
+    style: { strokeDasharray: '5,5', opacity: 0.5 },
   });
 
-  try {
-    await runExecutionCore(contextCardId, modelRef, outputType, resultId, abortController);
+  // 2. 对话中包含的源原子卡片 → 新 atom（点线，表示血缘/溯源关系）
+  const sourceCardIds = dialog.data.sourceCardIds || [];
+  const enabledSourceIds = new Set(
+    (dialog.data.items || [])
+      .filter((item) => item.enabled !== false)
+      .map((item) => item.sourceCardId)
+  );
 
-    // 更新 execution 状态
-    store.updateNodeData(executionId, { status: 'success' });
-  } catch (error) {
-    if (error instanceof DOMException && error.name === 'AbortError') {
-      console.log('Execution cancelled');
-      return;
-    }
-    console.error('Error executing context:', error);
-    store.updateNodeData(resultId, {
-      content: `执行失败: ${error instanceof Error ? error.message : String(error)}`,
-      status: 'error',
+  for (const sourceId of sourceCardIds) {
+    if (!enabledSourceIds.has(sourceId)) continue;
+    const edgeId = `e-source-${sourceId}-${atomNode.id}`;
+    // 避免重复边
+    if (newEdges.some((e) => e.id === edgeId)) continue;
+
+    newEdges.push({
+      id: edgeId,
+      source: sourceId,
+      sourceHandle: 'bottom-source',
+      target: atomNode.id,
+      targetHandle: 'top-target',
+      style: { strokeDasharray: '2,4', opacity: 0.35 },
     });
-    store.updateNodeData(executionId, { status: 'error' });
-  } finally {
-    clearTask(taskId);
-  }
-}
-
-// ─────────────────────────────────────────────────────────────
-// 重新执行（复用现有 execution + result）
-// ─────────────────────────────────────────────────────────────
-
-export async function reexecute(executionCardId: string) {
-  const taskId = uuidv4();
-  const abortController = new AbortController();
-  const store = useStore.getState();
-
-  const executionCard = store.nodes.find((n) => n.id === executionCardId && n.data.cardType === 'execution');
-  if (!executionCard) {
-    throw new Error('未找到执行卡片');
   }
 
-  const { contextCardId, modelRef, outputType, resultCardId } = executionCard.data;
-  if (!contextCardId || !modelRef || !outputType) {
-    throw new Error('执行卡片配置不完整');
-  }
+  store.setEdges(newEdges);
 
-  if (!resultCardId) {
-    throw new Error('执行卡片未关联结果卡片');
-  }
-
-  // 重置结果卡片为 loading 状态
-  store.updateNodeData(resultCardId, {
-    content: outputType === 'image' ? '生成中...' : '',
-    status: 'processing',
-  });
-
-  store.updateNodeData(executionCardId, { status: 'processing' });
-
-  taskRegistry.set(taskId, {
-    abortController,
-    nodeIds: [executionCardId, resultCardId],
-  });
-
-  try {
-    await runExecutionCore(contextCardId, modelRef, outputType, resultCardId, abortController);
-
-    // 更新 execution 状态
-    store.updateNodeData(executionCardId, { status: 'success' });
-  } catch (error) {
-    if (error instanceof DOMException && error.name === 'AbortError') {
-      console.log('Reexecution cancelled');
-      return;
-    }
-    console.error('Error reexecuting:', error);
-    store.updateNodeData(resultCardId, {
-      content: `执行失败: ${error instanceof Error ? error.message : String(error)}`,
-      status: 'error',
-    });
-    store.updateNodeData(executionCardId, { status: 'error' });
-  } finally {
-    clearTask(taskId);
-  }
+  return atomNode;
 }
