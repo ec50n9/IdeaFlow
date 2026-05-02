@@ -2,7 +2,7 @@ import { CardNode, AIProviderConfig, AIModelConfig, CallMode, DialogMessage } fr
 import { v4 as uuidv4 } from 'uuid';
 import { useStore } from '@/store/useStore';
 import { generateText, streamText, generateImage } from 'ai';
-import { extractAndStoreImages } from '@/lib/imageUtils';
+import { extractAndStoreImages, resolveImageUrl } from '@/lib/imageUtils';
 import { ASSISTANT_LOADING_PLACEHOLDER } from '@/lib/constants';
 import { createLanguageModel, createImageModel } from '@/lib/aiProviders';
 import {
@@ -287,10 +287,10 @@ export async function callAI(
 // 组装 Messages（从 Dialog 卡片）
 // ─────────────────────────────────────────────────────────────
 
-function buildMessagesForDialog(
+async function buildMessagesForDialog(
   dialogId: string,
   userContent: string
-): { messages: ChatMessage[]; images: string[]; prompt: string } {
+): Promise<{ messages: ChatMessage[]; images: string[]; prompt: string }> {
   const store = useStore.getState();
   const dialog = store.nodes.find((n) => n.id === dialogId && n.data.cardType === 'dialog');
   if (!dialog) {
@@ -310,8 +310,13 @@ function buildMessagesForDialog(
     const card = store.nodes.find((n) => n.id === item.sourceCardId && n.data.cardType === 'atom');
     if (!card) continue;
 
-    const content = card.data.content || '';
+    let content = card.data.content || '';
     if (card.data.atomType === 'image') {
+      // 将 idb:// 引用解析为 data URL，供 AI SDK 使用
+      if (content.startsWith('idb://')) {
+        const resolved = await resolveImageUrl(content);
+        content = resolved || content;
+      }
       images.push(content);
       resultMessages.push({
         role: item.role,
@@ -385,7 +390,7 @@ export async function sendDialogMessage(
   store.addDialogMessage(dialogId, userMessage);
 
   // 2. 构建 messages / prompt
-  const { messages, images, prompt } = buildMessagesForDialog(dialogId, userContent);
+  const { messages, images, prompt } = await buildMessagesForDialog(dialogId, userContent);
 
   // 3. 创建 assistant 占位消息
   const assistantMessageId = uuidv4();
