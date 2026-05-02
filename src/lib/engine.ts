@@ -1,10 +1,18 @@
 import { CardNode, AIProviderConfig, AIModelConfig, CallMode, DialogMessage } from '@/types';
 import { v4 as uuidv4 } from 'uuid';
 import { useStore } from '@/store/useStore';
-import { getAdapter, type OnChunk, TEXT_INSTRUCTION, type ChatMessage } from '@/lib/adapters';
+import { generateText, streamText, generateImage } from 'ai';
 import { extractAndStoreImages } from '@/lib/imageUtils';
-import { ASSISTANT_LOADING_PLACEHOLDER } from '@/lib/constants';
-import { isTextPart } from '@/lib/adapters/types';
+import { ASSISTANT_LOADING_PLACEHOLDER, TEXT_INSTRUCTION } from '@/lib/constants';
+import { createLanguageModel, createImageModel } from '@/lib/aiProviders';
+import {
+  geminiGenerateImage,
+  geminiEditImage,
+  openaiEditImage,
+  responsesGenerateImage,
+  responsesEditImage,
+  type AdapterResult,
+} from '@/lib/imageApi';
 
 const taskRegistry = new Map<string, {
   abortController: AbortController;
@@ -55,7 +63,7 @@ export function resolveModel(modelRef: string): { providerConfig: AIProviderConf
 // 图片提取
 // ─────────────────────────────────────────────────────────────
 
-async function processResultImages(results: any): Promise<any> {
+async function processResultImages(results: unknown): Promise<unknown> {
   if (Array.isArray(results)) {
     for (const item of results) {
       if (item && typeof item.content === 'string') {
@@ -65,8 +73,9 @@ async function processResultImages(results: any): Promise<any> {
   } else if (typeof results === 'string') {
     results = await extractAndStoreImages(results);
   } else if (results && typeof results === 'object') {
-    if (results.content && typeof results.content === 'string') {
-      results.content = await extractAndStoreImages(results.content);
+    const obj = results as Record<string, unknown>;
+    if (obj.content && typeof obj.content === 'string') {
+      obj.content = await extractAndStoreImages(obj.content);
     }
   }
   return results;
@@ -105,6 +114,47 @@ function validateCapability(modelConfig: AIModelConfig, mode: CallMode): void {
 }
 
 // ─────────────────────────────────────────────────────────────
+// 消息类型与转换
+// ─────────────────────────────────────────────────────────────
+
+export interface ChatMessage {
+  role: 'system' | 'user' | 'assistant';
+  content: string | Array<
+    | { type: 'text'; text: string }
+    | { type: 'image_url'; image_url: { url: string } }
+  >;
+}
+
+export type OnChunk = (chunk: string, accumulated: string) => void;
+
+function toModelMessages(messages: ChatMessage[]) {
+  return messages.map((m) => {
+    if (m.role === 'system') {
+      if (typeof m.content === 'string') {
+        return { role: 'system' as const, content: m.content };
+      }
+      return {
+        role: 'system' as const,
+        content: m.content
+          .filter((c): c is { type: 'text'; text: string } => c.type === 'text')
+          .map((c) => c.text)
+          .join('\n'),
+      };
+    }
+    if (typeof m.content === 'string') {
+      return { role: m.role, content: m.content };
+    }
+    return {
+      role: m.role,
+      content: m.content.map((part) => {
+        if (part.type === 'text') return { type: 'text' as const, text: part.text };
+        return { type: 'image' as const, image: part.image_url.url };
+      }),
+    };
+  });
+}
+
+// ─────────────────────────────────────────────────────────────
 // 核心 AI 调用
 // ─────────────────────────────────────────────────────────────
 
@@ -127,10 +177,7 @@ export async function callAI(
     throw new DOMException('Aborted', 'AbortError');
   }
 
-  const adapter = getAdapter(modelConfig.protocol);
-  const hasImages = !!(options?.images && options.images.length > 0);
   const mode = options?.mode || inferMode(modelConfig, 'text');
-
   validateCapability(modelConfig, mode);
 
   if (modelConfig.protocol === 'openai-responses' && (mode === 'generateImage' || mode === 'editImage')) {
@@ -139,60 +186,142 @@ export async function callAI(
     }
   }
 
-  const params = {
-    model: modelConfig.model,
-    prompt,
-    messages: options?.messages,
-    apiKey: providerConfig.apiKey,
-    endpoint: providerConfig.endpoint,
-    signal: options?.signal,
-    imageModel: modelConfig.imageModel,
-  };
-
-  let result: { content: Array<{ content: string }>; payload?: any };
+  let result: AdapterResult;
 
   switch (mode) {
     case 'chat': {
-      const chatParams = { ...params };
-      if (chatParams.messages) {
-        // 深拷贝，避免修改原始数组
-        chatParams.messages = chatParams.messages.map((m) => ({
+      const model = createLanguageModel(providerConfig, modelConfig);
+
+      // 准备消息
+      const chatMessages: ChatMessage[] = [];
+      if (options?.messages) {
+        chatMessages.push(...options.messages.map((m) => ({
           ...m,
-          content:
-            typeof m.content === 'string'
-              ? m.content
-              : m.content.map((c) => ({ ...c })),
-        }));
-        const lastMsg = chatParams.messages[chatParams.messages.length - 1];
-        if (lastMsg && lastMsg.role === 'user') {
-          if (typeof lastMsg.content === 'string') {
-            lastMsg.content += TEXT_INSTRUCTION;
-          } else if (Array.isArray(lastMsg.content)) {
-            const textParts = lastMsg.content.filter(isTextPart);
-            if (textParts.length > 0) {
-              const lastTextPart = textParts[textParts.length - 1];
-              lastTextPart.text += TEXT_INSTRUCTION;
-            } else {
-              lastMsg.content.push({ type: 'text', text: TEXT_INSTRUCTION });
-            }
+          content: typeof m.content === 'string'
+            ? m.content
+            : m.content.map((c) => ({ ...c })),
+        })));
+      } else if (prompt) {
+        chatMessages.push({ role: 'user', content: prompt });
+      }
+
+      // 在最后一条 user message 追加 TEXT_INSTRUCTION
+      const lastMsg = chatMessages[chatMessages.length - 1];
+      if (lastMsg && lastMsg.role === 'user') {
+        if (typeof lastMsg.content === 'string') {
+          lastMsg.content += TEXT_INSTRUCTION;
+        } else if (Array.isArray(lastMsg.content)) {
+          const textParts = lastMsg.content.filter((c): c is { type: 'text'; text: string } => c.type === 'text');
+          if (textParts.length > 0) {
+            const lastTextPart = textParts[textParts.length - 1];
+            lastTextPart.text += TEXT_INSTRUCTION;
+          } else {
+            lastMsg.content.push({ type: 'text', text: TEXT_INSTRUCTION });
           }
         }
-      } else if (chatParams.prompt) {
-        chatParams.prompt += TEXT_INSTRUCTION;
       }
-      if (options?.onChunk && adapter.supportsStreaming) {
-        result = await adapter.chatStream(chatParams, options.onChunk);
+
+      const modelMessages = toModelMessages(chatMessages);
+      const systemMsg = modelMessages.find((m) => m.role === 'system');
+      const chatOnlyMessages = modelMessages.filter((m) => m.role !== 'system');
+
+      if (options?.onChunk) {
+        const streamResult = streamText({
+          model,
+          system: typeof systemMsg?.content === 'string' ? systemMsg.content : undefined,
+          messages: chatOnlyMessages as any,
+          abortSignal: options?.signal,
+        });
+
+        let accumulated = '';
+        for await (const chunk of streamResult.textStream) {
+          accumulated += chunk;
+          options.onChunk(chunk, accumulated);
+        }
+
+        result = { content: normalizeJsonText(accumulated), payload: accumulated };
       } else {
-        result = await adapter.chat(chatParams);
+        const textResult = await generateText({
+          model,
+          system: typeof systemMsg?.content === 'string' ? systemMsg.content : undefined,
+          messages: chatOnlyMessages as any,
+          abortSignal: options?.signal,
+        });
+
+        result = { content: normalizeJsonText(textResult.text), payload: textResult };
       }
       break;
     }
+
     case 'generateImage': {
-      result = await adapter.generateImage(params);
+      if (modelConfig.protocol === 'openai') {
+        const imageModel = createImageModel(providerConfig, modelConfig);
+        if (!imageModel) {
+          throw new Error('OpenAI Image Model 创建失败');
+        }
+        const { image } = await generateImage({
+          model: imageModel,
+          prompt,
+          abortSignal: options?.signal,
+        });
+        const dataUrl = `data:image/png;base64,${image.base64}`;
+        result = { content: [{ content: `![Generated Image](${dataUrl})` }], payload: image };
+      } else if (modelConfig.protocol === 'openai-responses') {
+        result = await responsesGenerateImage({
+          apiKey: providerConfig.apiKey,
+          endpoint: providerConfig.endpoint,
+          model: modelConfig.model,
+          prompt,
+          imageModel: modelConfig.imageModel,
+          signal: options?.signal,
+        });
+      } else if (modelConfig.protocol === 'gemini') {
+        result = await geminiGenerateImage({
+          apiKey: providerConfig.apiKey,
+          endpoint: providerConfig.endpoint,
+          model: modelConfig.model,
+          prompt,
+          signal: options?.signal,
+        });
+      } else {
+        throw new Error(`协议 "${modelConfig.protocol}" 不支持文生图功能`);
+      }
       break;
     }
+
     case 'editImage': {
-      result = await adapter.editImage({ ...params, images: options!.images! });
+      const images = options!.images!;
+      if (modelConfig.protocol === 'openai') {
+        result = await openaiEditImage({
+          apiKey: providerConfig.apiKey,
+          endpoint: providerConfig.endpoint,
+          model: modelConfig.model,
+          prompt,
+          images,
+          signal: options?.signal,
+        });
+      } else if (modelConfig.protocol === 'openai-responses') {
+        result = await responsesEditImage({
+          apiKey: providerConfig.apiKey,
+          endpoint: providerConfig.endpoint,
+          model: modelConfig.model,
+          prompt,
+          images,
+          imageModel: modelConfig.imageModel,
+          signal: options?.signal,
+        });
+      } else if (modelConfig.protocol === 'gemini') {
+        result = await geminiEditImage({
+          apiKey: providerConfig.apiKey,
+          endpoint: providerConfig.endpoint,
+          model: modelConfig.model,
+          prompt,
+          images,
+          signal: options?.signal,
+        });
+      } else {
+        throw new Error(`协议 "${modelConfig.protocol}" 不支持图生图功能`);
+      }
       break;
     }
   }
@@ -329,7 +458,7 @@ export async function sendDialogMessage(
   };
 
   try {
-    let results: any = await callAI(prompt, modelRef, {
+    let results: unknown = await callAI(prompt, modelRef, {
       signal: abortController.signal,
       onChunk: outputType === 'text' ? onChunk : undefined,
       images: images.length > 0 ? images : undefined,
@@ -445,4 +574,15 @@ export function extractContentAsAtom(
   store.setEdges(newEdges);
 
   return atomNode;
+}
+
+// ─── 工具函数 ───
+
+function normalizeJsonText(text: string): Array<{ content: string }> {
+  text = text.replace(/^```json\s*/, '').replace(/\s*```$/, '').trim();
+  try {
+    return JSON.parse(text);
+  } catch {
+    return [{ content: text }];
+  }
 }
