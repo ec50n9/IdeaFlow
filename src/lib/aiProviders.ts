@@ -5,16 +5,25 @@ import type { AIProviderConfig, AIModelConfig } from '@/types';
 
 /**
  * 根据 Provider 配置创建 ai-sdk LanguageModel
+ *
+ * ⚠️ ai-sdk v3 中 createOpenAI 的默认 languageModel 已切换为 Responses API（/responses）。
+ * 标准 Chat 必须显式使用 provider.chat(modelId) 来走 /chat/completions。
  */
 export function createLanguageModel(provider: AIProviderConfig, modelConfig: AIModelConfig) {
   switch (modelConfig.protocol) {
-    case 'openai':
+    case 'openai': {
+      const openai = createOpenAI({
+        apiKey: provider.apiKey,
+        baseURL: provider.endpoint,
+      });
+      return openai.chat(modelConfig.model);
+    }
     case 'openai-responses': {
       const openai = createOpenAI({
         apiKey: provider.apiKey,
         baseURL: provider.endpoint,
       });
-      return openai(modelConfig.model);
+      return openai.responses(modelConfig.model);
     }
     case 'anthropic': {
       const anthropic = createAnthropic({
@@ -35,7 +44,7 @@ export function createLanguageModel(provider: AIProviderConfig, modelConfig: AIM
         apiKey: provider.apiKey,
         baseURL: provider.endpoint,
       });
-      return generic(modelConfig.model);
+      return generic.chat(modelConfig.model);
     }
     default:
       throw new Error(`不支持的协议类型: ${modelConfig.protocol}`);
