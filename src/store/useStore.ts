@@ -341,22 +341,6 @@ export const useStore = create<AppState>()(
         try {
           const state = persistedState as any;
 
-          // v1 -> v2 的 migrate
-          if (version < 2) {
-            if (Array.isArray(state.actions)) {
-              state.actions = state.actions
-                .filter((action: any) => action && typeof action.id === 'string')
-                .map((action: any) => ({
-                  ...action,
-                  trigger: action.trigger && action.trigger.mode
-                    ? action.trigger
-                    : action.trigger && action.trigger.constraints && action.trigger.constraints.length > 0
-                      ? { mode: 'constraint', constraints: action.trigger.constraints }
-                      : { mode: 'simple', minNodes: action.trigger?.minNodes ?? 1, maxNodes: action.trigger?.maxNodes ?? null },
-                }));
-            }
-          }
-
           // v2 -> v3: 移除 Action 概念，重构卡片概念
           if (version < 3) {
             const oldNodes = Array.isArray(state.nodes) ? state.nodes : [];
@@ -573,14 +557,17 @@ export const useStore = create<AppState>()(
             data: { ...node.data },
           };
           if (node.data.cardType === 'atom') {
+            const content = typeof node.data.content === 'string' ? node.data.content : '';
+            // 保留 idb:// 引用（IndexedDB 中的图片），只剥离内联 base64
+            const stripped = content.replace(
+              /data:image\/[^;]+;base64,[\sA-Za-z0-9+/=]+/g,
+              '[图片]'
+            );
             return {
               ...base,
               data: {
                 ...node.data,
-                content: (typeof node.data.content === 'string' ? node.data.content : '').replace(
-                  /data:image\/[^;]+;base64,[\sA-Za-z0-9+/=]+/g,
-                  '[图片]'
-                ),
+                content: stripped,
               },
             };
           }

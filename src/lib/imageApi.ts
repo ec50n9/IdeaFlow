@@ -1,11 +1,7 @@
 // ─────────────────────────────────────────────────────────────
 // Image Generation / Editing 自定义 API（ai-sdk 未覆盖的部分）
+// 所有函数返回 markdown 图片标签字符串（如 `![alt](dataUrl)`）
 // ─────────────────────────────────────────────────────────────
-
-export interface AdapterResult {
-  content: Array<{ content: string }>;
-  payload?: unknown;
-}
 
 // ─── Gemini Image Generation ───
 
@@ -15,7 +11,7 @@ export async function geminiGenerateImage(params: {
   model: string;
   prompt: string;
   signal?: AbortSignal;
-}): Promise<AdapterResult> {
+}): Promise<string> {
   const baseUrl = params.endpoint || 'https://generativelanguage.googleapis.com/v1beta';
   const response = await fetch(`${baseUrl}/models/${params.model}:generateContent?key=${params.apiKey}`, {
     method: 'POST',
@@ -41,13 +37,13 @@ export async function geminiGenerateImage(params: {
     const mimeType = imagePart.inlineData.mimeType || 'image/png';
     const base64 = imagePart.inlineData.data;
     const dataUrl = `data:${mimeType};base64,${base64.replace(/\s/g, '')}`;
-    return { content: [{ content: `![Generated Image](${dataUrl})` }], payload: data };
+    return `![Generated Image](${dataUrl})`;
   }
 
   const text =
     (parts.find((p) => typeof p.text === 'string') as { text?: string } | undefined)?.text ||
     '图片生成失败';
-  return { content: [{ content: text }], payload: data };
+  return text;
 }
 
 // ─── Gemini Image Editing ───
@@ -59,7 +55,7 @@ export async function geminiEditImage(params: {
   prompt: string;
   images: string[];
   signal?: AbortSignal;
-}): Promise<AdapterResult> {
+}): Promise<string> {
   const baseUrl = params.endpoint || 'https://generativelanguage.googleapis.com/v1beta';
 
   const parts: Array<
@@ -111,13 +107,13 @@ export async function geminiEditImage(params: {
     const mimeType = imagePart.inlineData.mimeType || 'image/png';
     const base64 = imagePart.inlineData.data;
     const dataUrl = `data:${mimeType};base64,${base64.replace(/\s/g, '')}`;
-    return { content: [{ content: `![Edited Image](${dataUrl})` }], payload: data };
+    return `![Edited Image](${dataUrl})`;
   }
 
   const text =
     (resultParts.find((p) => typeof p.text === 'string') as { text?: string } | undefined)?.text ||
     '图片编辑失败';
-  return { content: [{ content: text }], payload: data };
+  return text;
 }
 
 // ─── OpenAI Image Editing ───
@@ -129,7 +125,7 @@ export async function openaiEditImage(params: {
   prompt: string;
   images: string[];
   signal?: AbortSignal;
-}): Promise<AdapterResult> {
+}): Promise<string> {
   const endpoint = params.endpoint || 'https://api.openai.com/v1/images/edits';
   const formData = new FormData();
   formData.append('model', params.model);
@@ -165,10 +161,7 @@ export async function openaiEditImage(params: {
   const b64 = data.data?.[0]?.b64_json || '';
   const imageUrl = url || (b64 ? `data:image/png;base64,${b64.replace(/\s/g, '')}` : '');
 
-  return {
-    content: [{ content: imageUrl ? `![Edited Image](${imageUrl})` : '图片编辑失败' }],
-    payload: data,
-  };
+  return imageUrl ? `![Edited Image](${imageUrl})` : '图片编辑失败';
 }
 
 // ─── OpenAI-Responses Image Generation / Editing ───
@@ -289,7 +282,7 @@ export async function responsesGenerateImage(params: {
   prompt: string;
   imageModel?: string;
   signal?: AbortSignal;
-}): Promise<AdapterResult> {
+}): Promise<string> {
   const endpoint = params.endpoint || 'https://api.openai.com/v1/responses';
   const body = {
     model: params.model,
@@ -315,10 +308,7 @@ export async function responsesGenerateImage(params: {
   const { url, b64 } = extractImageFromEvents(events);
   const imageUrl = url || (b64 ? `data:image/png;base64,${b64.replace(/\s/g, '')}` : '');
 
-  return {
-    content: [{ content: imageUrl ? `![Generated Image](${imageUrl})` : '图片生成失败' }],
-    payload: events,
-  };
+  return imageUrl ? `![Generated Image](${imageUrl})` : '图片生成失败';
 }
 
 export async function responsesEditImage(params: {
@@ -329,7 +319,7 @@ export async function responsesEditImage(params: {
   images: string[];
   imageModel?: string;
   signal?: AbortSignal;
-}): Promise<AdapterResult> {
+}): Promise<string> {
   const endpoint = params.endpoint || 'https://api.openai.com/v1/responses';
   const content: Array<Record<string, string>> = [{ type: 'input_text', text: params.prompt || '' }];
 
@@ -361,10 +351,7 @@ export async function responsesEditImage(params: {
   const { url, b64 } = extractImageFromEvents(events);
   const imageUrl = url || (b64 ? `data:image/png;base64,${b64.replace(/\s/g, '')}` : '');
 
-  return {
-    content: [{ content: imageUrl ? `![Edited Image](${imageUrl})` : '图片编辑失败' }],
-    payload: events,
-  };
+  return imageUrl ? `![Edited Image](${imageUrl})` : '图片编辑失败';
 }
 
 // ─── Utilities ───

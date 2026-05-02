@@ -275,10 +275,9 @@ export const CardNodeComponent = memo(({ id, data, selected }: NodeProps<CardNod
                 <span className="text-muted-foreground italic">空卡片</span>
               ))}
               {isImage && (data.content ? (
-                <img
-                  src={data.content.startsWith('idb://') ? undefined : data.content}
+                <MarkdownImage
+                  src={data.content}
                   alt="图片"
-                  className="rounded-md max-h-[300px] w-full object-contain"
                 />
               ) : (
                 <span className="text-muted-foreground italic">[图片]</span>

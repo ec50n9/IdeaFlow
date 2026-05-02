@@ -14,6 +14,7 @@ import { useStore } from '@/store/useStore';
 import { CardNodeComponent } from './CardNode';
 import { v4 as uuidv4 } from 'uuid';
 import { isInputElement } from '@/lib/utils';
+import { saveImage } from '@/lib/imageDB';
 import { CreateMenu } from './CreateMenu';
 
 const nodeTypes = {
@@ -234,8 +235,9 @@ export const Canvas = () => {
 
       if (file.type.startsWith('image/')) {
         const reader = new FileReader();
-        reader.onload = (ev) => {
+        reader.onload = async (ev) => {
           const dataUrl = ev.target?.result as string;
+          const id = await saveImage(dataUrl);
           addNode({
             id: uuidv4(),
             type: 'cardNode',
@@ -243,7 +245,7 @@ export const Canvas = () => {
             data: {
               cardType: 'atom',
               atomType: 'image',
-              content: dataUrl,
+              content: `idb://${id}`,
               status: 'idle',
               sourceType: 'manual',
             },

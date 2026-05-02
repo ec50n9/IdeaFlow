@@ -3,7 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { useStore } from '@/store/useStore';
 import { generateText, streamText, generateImage } from 'ai';
 import { extractAndStoreImages } from '@/lib/imageUtils';
-import { ASSISTANT_LOADING_PLACEHOLDER, TEXT_INSTRUCTION } from '@/lib/constants';
+import { ASSISTANT_LOADING_PLACEHOLDER } from '@/lib/constants';
 import { createLanguageModel, createImageModel } from '@/lib/aiProviders';
 import {
   geminiGenerateImage,
@@ -11,7 +11,6 @@ import {
   openaiEditImage,
   responsesGenerateImage,
   responsesEditImage,
-  type AdapterResult,
 } from '@/lib/imageApi';
 
 const taskRegistry = new Map<string, {
@@ -57,28 +56,6 @@ export function resolveModel(modelRef: string): { providerConfig: AIProviderConf
   }
 
   return { providerConfig: provider, modelConfig: model };
-}
-
-// ─────────────────────────────────────────────────────────────
-// 图片提取
-// ─────────────────────────────────────────────────────────────
-
-async function processResultImages(results: unknown): Promise<unknown> {
-  if (Array.isArray(results)) {
-    for (const item of results) {
-      if (item && typeof item.content === 'string') {
-        item.content = await extractAndStoreImages(item.content);
-      }
-    }
-  } else if (typeof results === 'string') {
-    results = await extractAndStoreImages(results);
-  } else if (results && typeof results === 'object') {
-    const obj = results as Record<string, unknown>;
-    if (obj.content && typeof obj.content === 'string') {
-      obj.content = await extractAndStoreImages(obj.content);
-    }
-  }
-  return results;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -170,7 +147,7 @@ export async function callAI(
   prompt: string,
   modelRef: string,
   options?: CallAIOptions
-): Promise<any> {
+): Promise<string> {
   const { providerConfig, modelConfig } = resolveModel(modelRef);
 
   if (options?.signal?.aborted) {
@@ -185,8 +162,6 @@ export async function callAI(
       throw new Error(`模型 "${modelConfig.model}" 使用 Responses API 协议进行图片生成/编辑时，必须配置图像模型（如 gpt-image-2）。请在模型配置中心补全该模型的「图像模型」字段。`);
     }
   }
-
-  let result: AdapterResult;
 
   switch (mode) {
     case 'chat': {
@@ -203,22 +178,6 @@ export async function callAI(
         })));
       } else if (prompt) {
         chatMessages.push({ role: 'user', content: prompt });
-      }
-
-      // 在最后一条 user message 追加 TEXT_INSTRUCTION
-      const lastMsg = chatMessages[chatMessages.length - 1];
-      if (lastMsg && lastMsg.role === 'user') {
-        if (typeof lastMsg.content === 'string') {
-          lastMsg.content += TEXT_INSTRUCTION;
-        } else if (Array.isArray(lastMsg.content)) {
-          const textParts = lastMsg.content.filter((c): c is { type: 'text'; text: string } => c.type === 'text');
-          if (textParts.length > 0) {
-            const lastTextPart = textParts[textParts.length - 1];
-            lastTextPart.text += TEXT_INSTRUCTION;
-          } else {
-            lastMsg.content.push({ type: 'text', text: TEXT_INSTRUCTION });
-          }
-        }
       }
 
       const modelMessages = toModelMessages(chatMessages);
@@ -239,7 +198,7 @@ export async function callAI(
           options.onChunk(chunk, accumulated);
         }
 
-        result = { content: normalizeJsonText(accumulated), payload: accumulated };
+        return accumulated;
       } else {
         const textResult = await generateText({
           model,
@@ -248,9 +207,8 @@ export async function callAI(
           abortSignal: options?.signal,
         });
 
-        result = { content: normalizeJsonText(textResult.text), payload: textResult };
+        return textResult.text;
       }
-      break;
     }
 
     case 'generateImage': {
@@ -265,9 +223,9 @@ export async function callAI(
           abortSignal: options?.signal,
         });
         const dataUrl = `data:image/png;base64,${image.base64}`;
-        result = { content: [{ content: `![Generated Image](${dataUrl})` }], payload: image };
+        return `![Generated Image](${dataUrl})`;
       } else if (modelConfig.protocol === 'openai-responses') {
-        result = await responsesGenerateImage({
+        return await responsesGenerateImage({
           apiKey: providerConfig.apiKey,
           endpoint: providerConfig.endpoint,
           model: modelConfig.model,
@@ -276,7 +234,7 @@ export async function callAI(
           signal: options?.signal,
         });
       } else if (modelConfig.protocol === 'gemini') {
-        result = await geminiGenerateImage({
+        return await geminiGenerateImage({
           apiKey: providerConfig.apiKey,
           endpoint: providerConfig.endpoint,
           model: modelConfig.model,
@@ -286,13 +244,12 @@ export async function callAI(
       } else {
         throw new Error(`协议 "${modelConfig.protocol}" 不支持文生图功能`);
       }
-      break;
     }
 
     case 'editImage': {
       const images = options!.images!;
       if (modelConfig.protocol === 'openai') {
-        result = await openaiEditImage({
+        return await openaiEditImage({
           apiKey: providerConfig.apiKey,
           endpoint: providerConfig.endpoint,
           model: modelConfig.model,
@@ -301,7 +258,7 @@ export async function callAI(
           signal: options?.signal,
         });
       } else if (modelConfig.protocol === 'openai-responses') {
-        result = await responsesEditImage({
+        return await responsesEditImage({
           apiKey: providerConfig.apiKey,
           endpoint: providerConfig.endpoint,
           model: modelConfig.model,
@@ -311,7 +268,7 @@ export async function callAI(
           signal: options?.signal,
         });
       } else if (modelConfig.protocol === 'gemini') {
-        result = await geminiEditImage({
+        return await geminiEditImage({
           apiKey: providerConfig.apiKey,
           endpoint: providerConfig.endpoint,
           model: modelConfig.model,
@@ -322,11 +279,8 @@ export async function callAI(
       } else {
         throw new Error(`协议 "${modelConfig.protocol}" 不支持图生图功能`);
       }
-      break;
     }
   }
-
-  return result.content;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -458,7 +412,7 @@ export async function sendDialogMessage(
   };
 
   try {
-    let results: unknown = await callAI(prompt, modelRef, {
+    let result = await callAI(prompt, modelRef, {
       signal: abortController.signal,
       onChunk: outputType === 'text' ? onChunk : undefined,
       images: images.length > 0 ? images : undefined,
@@ -466,20 +420,10 @@ export async function sendDialogMessage(
       messages,
     });
 
-    // 处理结果中的图片
-    if (results) {
-      results = await processResultImages(results);
-    }
+    // 处理结果中的图片（AI 生成的图片存入 IndexedDB）
+    result = await extractAndStoreImages(result);
 
-    // 更新最终结果
-    let finalContent = '';
-    if (Array.isArray(results) && results.length > 0) {
-      finalContent = results[0].content || '';
-    } else if (typeof results === 'string') {
-      finalContent = results;
-    }
-
-    store.updateDialogMessage(dialogId, assistantMessageId, finalContent);
+    store.updateDialogMessage(dialogId, assistantMessageId, result);
     store.updateNodeData(dialogId, { status: 'idle' });
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') {
@@ -574,15 +518,4 @@ export function extractContentAsAtom(
   store.setEdges(newEdges);
 
   return atomNode;
-}
-
-// ─── 工具函数 ───
-
-function normalizeJsonText(text: string): Array<{ content: string }> {
-  text = text.replace(/^```json\s*/, '').replace(/\s*```$/, '').trim();
-  try {
-    return JSON.parse(text);
-  } catch {
-    return [{ content: text }];
-  }
 }
