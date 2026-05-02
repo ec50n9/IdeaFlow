@@ -22,6 +22,7 @@ import {
 import { CardNode } from '@/types';
 import { sendImageGenRequest } from '@/lib/imageEngine';
 import { resolveImageUrl } from '@/lib/fileUtils';
+import { saveDataUrl } from '@/lib/fileDB';
 
 interface ImageGenResult {
   id: string;
@@ -47,10 +48,29 @@ export function ImageGenPanel({ open, onOpenChange, selectedAtomNodes }: ImageGe
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const initDoneRef = useRef(false);
 
-  // 解析参考图 + 拼装文本卡片内容到提示词
+  // 关闭弹窗时重置所有状态
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      setPrompt('');
+      setReferenceImages([]);
+      setResults([]);
+      setError(null);
+      setIsGenerating(false);
+      abortControllerRef.current?.abort();
+      abortControllerRef.current = null;
+    }
+  }, [open]);
+
+  // 仅在弹窗首次打开时，从选中节点解析参考图和填充提示词
+  useEffect(() => {
+    if (!open) {
+      initDoneRef.current = false;
+      return;
+    }
+    if (initDoneRef.current) return;
+    initDoneRef.current = true;
 
     // 1. 解析参考图
     const imagePromises = selectedAtomNodes
@@ -140,7 +160,30 @@ export function ImageGenPanel({ open, onOpenChange, selectedAtomNodes }: ImageGe
     setReferenceImages((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const handleExtractToCanvas = (imageUrl: string) => {
+  const handleExtractToCanvas = useCallback(async (imageUrl: string) => {
+    let storedContent = imageUrl;
+
+    try {
+      if (imageUrl.startsWith('data:')) {
+        const id = await saveDataUrl(imageUrl);
+        storedContent = `idb://${id}`;
+      } else if (imageUrl.startsWith('http')) {
+        const response = await fetch(imageUrl);
+        const blob = await response.blob();
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+        const id = await saveDataUrl(dataUrl);
+        storedContent = `idb://${id}`;
+      }
+    } catch (e) {
+      console.error('Failed to store image to IndexedDB:', e);
+      // 存储失败时回退到原始 URL
+    }
+
     const atomNodes = selectedAtomNodes.filter((n) => n.data.cardType === 'atom');
     const baseX = atomNodes.length > 0
       ? Math.max(...atomNodes.map((n) => n.position.x + 250))
@@ -161,12 +204,12 @@ export function ImageGenPanel({ open, onOpenChange, selectedAtomNodes }: ImageGe
       data: {
         cardType: 'atom',
         atomType: 'image',
-        content: imageUrl,
+        content: storedContent,
         status: 'idle',
         sourceType: 'ai',
       },
     });
-  };
+  }, [selectedAtomNodes, nodes, addNode]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
