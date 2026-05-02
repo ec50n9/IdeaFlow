@@ -380,7 +380,10 @@ export async function sendDialogMessage(
     throw new Error('未找到对话卡片');
   }
 
-  // 1. 添加用户消息
+  // 1. 构建 messages / prompt（此时 dialog 中还没有当前用户消息，避免重复）
+  const { messages, images, prompt } = await buildMessagesForDialog(dialogId, userContent);
+
+  // 2. 添加用户消息到 dialog UI
   const userMessage: DialogMessage = {
     id: uuidv4(),
     role: 'user',
@@ -388,9 +391,6 @@ export async function sendDialogMessage(
     createdAt: Date.now(),
   };
   store.addDialogMessage(dialogId, userMessage);
-
-  // 2. 构建 messages / prompt
-  const { messages, images, prompt } = await buildMessagesForDialog(dialogId, userContent);
 
   // 3. 创建 assistant 占位消息
   const assistantMessageId = uuidv4();
