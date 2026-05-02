@@ -376,13 +376,7 @@ export function DialogChat({ open, onOpenChange, dialogCardId }: DialogChatProps
                   ) : (
                     <div className={cn("prose prose-sm max-w-none", isUser && "dark:prose-invert")}>
                       {isAssistant ? (
-                        <Markdown
-                          components={{
-                            img: ({ src, alt }) => (
-                              <ChatImage src={src} alt={alt} onExtract={handleExtractImage} />
-                            ) as any,
-                          }}
-                        >
+                        <Markdown>
                           {msg.content}
                         </Markdown>
                       ) : (

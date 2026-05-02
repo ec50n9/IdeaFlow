@@ -7,6 +7,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import {
   Image as ImageIcon,
@@ -45,11 +46,12 @@ export function ImageGenPanel({ open, onOpenChange, selectedAtomNodes }: ImageGe
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // 解析参考图（从选中的 image 原子卡片）
+  // 解析参考图 + 拼装文本卡片内容到提示词
   useEffect(() => {
     if (!open) return;
 
-    const promises = selectedAtomNodes
+    // 1. 解析参考图
+    const imagePromises = selectedAtomNodes
       .filter((n) => n.data.atomType === 'image' && n.data.content)
       .map(async (n) => {
         let url = n.data.content!;
@@ -59,9 +61,18 @@ export function ImageGenPanel({ open, onOpenChange, selectedAtomNodes }: ImageGe
         return url;
       });
 
-    Promise.all(promises).then((urls) => {
+    Promise.all(imagePromises).then((urls) => {
       setReferenceImages(urls.filter(Boolean));
     });
+
+    // 2. 拼装文本卡片内容到提示词输入框
+    const textContents = selectedAtomNodes
+      .filter((n) => n.data.atomType === 'text' && n.data.content?.trim())
+      .map((n) => n.data.content!.trim());
+
+    if (textContents.length > 0) {
+      setPrompt(textContents.join('\n\n'));
+    }
   }, [open, selectedAtomNodes]);
 
   // 可用模型（支持图像生成或编辑）
@@ -278,7 +289,7 @@ export function ImageGenPanel({ open, onOpenChange, selectedAtomNodes }: ImageGe
         {/* 输入区 */}
         <div className="shrink-0 border-t bg-background px-4 py-3">
           <div className="flex gap-2">
-            <textarea
+            <Textarea
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               onKeyDown={handleKeyDown}
@@ -290,7 +301,7 @@ export function ImageGenPanel({ open, onOpenChange, selectedAtomNodes }: ImageGe
                   : '请先配置支持图像生成的模型'
               }
               disabled={availableModels.length === 0 || isGenerating}
-              className="flex-1 min-h-[40px] max-h-[120px] resize-none rounded-xl border bg-muted/50 px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-primary disabled:opacity-50"
+              className="flex-1 min-h-[40px] max-h-[120px] resize-none rounded-xl bg-muted/50 px-3 py-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-primary disabled:opacity-50"
               rows={1}
             />
             <Button
