@@ -7,7 +7,6 @@ import { cn } from '@/lib/utils';
 import {
   Edit3,
   Trash2,
-  Lock,
   FileText,
   Image as ImageIcon,
   File,
@@ -18,8 +17,7 @@ import {
   BotMessageSquare,
 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
-import { resolveImageUrl } from '@/lib/imageUtils';
-import { DialogChat } from '@/components/dialog/DialogChat';
+import { resolveImageUrl } from '@/lib/fileUtils';
 
 // ─────────────────────────────────────────────────────────────
 // Markdown 图片组件
@@ -79,7 +77,6 @@ function areEqual(prev: NodeProps<CardNode>, next: NodeProps<CardNode>) {
   if (prev.data.cardType !== next.data.cardType) return false;
   if (prev.data.content !== next.data.content) return false;
   if (prev.data.status !== next.data.status) return false;
-  if (prev.data.isLocked !== next.data.isLocked) return false;
   if (prev.data.isEditing !== next.data.isEditing) return false;
   // dialog 专用比较
   if (prev.data.messages?.length !== next.data.messages?.length) return false;
@@ -95,16 +92,12 @@ export const CardNodeComponent = memo(({ id, data, selected }: NodeProps<CardNod
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(data.content || '');
   const [editSize, setEditSize] = useState<{ width: number; height: number } | null>(null);
-  const [dialogOpen, setDialogOpen] = useState(false);
 
   const updateNodeData = useStore((state) => state.updateNodeData);
   const deleteNode = useStore((state) => state.deleteNode);
-  const addNode = useStore((state) => state.addNode);
-  const nodes = useStore((state) => state.nodes);
-  const edges = useStore((state) => state.edges);
-  const setEdges = useStore((state) => state.setEdges);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const openDialog = useStore((state) => state.openDialog);
   const nodeRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const renderedMarkdown = useMemo(() => (
     <Markdown urlTransform={(value) => value} components={{ img: MarkdownImage as any }}>
@@ -130,38 +123,6 @@ export const CardNodeComponent = memo(({ id, data, selected }: NodeProps<CardNod
 
   const handleDoubleClick = useCallback(() => {
     if (data.cardType === 'atom') {
-      if (data.isLocked) {
-        // 自动克隆
-        const cloneId = uuidv4();
-        const currentNode = nodes.find((n) => n.id === id);
-        const clone: CardNode = {
-          id: cloneId,
-          type: 'cardNode',
-          position: {
-            x: (currentNode?.position.x ?? 0) + 30,
-            y: (currentNode?.position.y ?? 0) + 30,
-          },
-          data: {
-            cardType: 'atom',
-            atomType: data.atomType,
-            content: data.content,
-            status: 'idle',
-            sourceType: 'manual',
-            isLocked: false,
-          },
-        };
-        addNode(clone);
-        setEdges([...edges, { id: `e-${id}-${cloneId}`, source: id, sourceHandle: 'right-source', target: cloneId, targetHandle: 'left-target' }]);
-        // 在新克隆上进入编辑模式
-        setTimeout(() => {
-          const cloneEl = document.querySelector(`[data-id="${cloneId}"]`);
-          if (cloneEl) {
-            (cloneEl as HTMLElement).dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
-          }
-        }, 50);
-        return;
-      }
-
       if (data.atomType === 'text') {
         if (nodeRef.current) {
           setEditSize({
@@ -172,9 +133,9 @@ export const CardNodeComponent = memo(({ id, data, selected }: NodeProps<CardNod
         setIsEditing(true);
       }
     } else if (data.cardType === 'dialog') {
-      setDialogOpen(true);
+      openDialog(id);
     }
-  }, [data, id, nodes, edges, addNode, setEdges]);
+  }, [data, id, openDialog]);
 
   const handleBlur = useCallback(() => {
     setIsEditing(false);
@@ -230,16 +191,6 @@ export const CardNodeComponent = memo(({ id, data, selected }: NodeProps<CardNod
               {data.sourceType === 'ai' && ' · AI'}
             </span>
           </div>
-
-          {data.isLocked && (
-            <div
-              className="flex items-center gap-1 bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 text-[10px] font-medium px-2 py-0.5 rounded-full shadow-sm border border-slate-200 dark:border-slate-700"
-              title="该卡片已参与对话，修改将自动克隆"
-            >
-              <Lock className="w-3 h-3" />
-              <span>已锁定</span>
-            </div>
-          )}
         </div>
 
         {/* 删除按钮 */}
@@ -388,14 +339,6 @@ export const CardNodeComponent = memo(({ id, data, selected }: NodeProps<CardNod
 
       {data.cardType === 'atom' && renderAtomCard()}
       {data.cardType === 'dialog' && renderDialogCard()}
-
-      {data.cardType === 'dialog' && (
-        <DialogChat
-          open={dialogOpen}
-          onOpenChange={setDialogOpen}
-          dialogCardId={id}
-        />
-      )}
     </div>
   );
 }, areEqual);

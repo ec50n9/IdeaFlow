@@ -2,7 +2,7 @@ import { CardNode, AIProviderConfig, AIModelConfig, CallMode, DialogMessage } fr
 import { v4 as uuidv4 } from 'uuid';
 import { useStore } from '@/store/useStore';
 import { generateText, streamText, generateImage } from 'ai';
-import { extractAndStoreImages, resolveImageUrl } from '@/lib/imageUtils';
+import { extractAndStoreImages, resolveImageUrl } from '@/lib/fileUtils';
 import { ASSISTANT_LOADING_PLACEHOLDER } from '@/lib/constants';
 import { createLanguageModel, createImageModel } from '@/lib/aiProviders';
 import {
@@ -478,7 +478,7 @@ export function extractContentAsAtom(
       content,
       status: 'idle',
       sourceType: 'ai',
-      isLocked: false,
+
     },
   };
 

@@ -103,6 +103,10 @@ interface AppState {
   openDialogCreation: (atomNodeIds: string[], position: { x: number; y: number }) => void;
   confirmDialogCreation: (modelRef: string) => void;
   cancelDialogCreation: () => void;
+
+  /** 当前打开的对话弹窗 */
+  activeDialogId: string | null;
+  openDialog: (id: string | null) => void;
 }
 
 export const useStore = create<AppState>()(
@@ -314,24 +318,22 @@ export const useStore = create<AppState>()(
         }));
         const newEdges: Edge[] = atomNodeIds.length > 0 ? [...edges, ...edgesToAdd] : edges;
 
-        // 锁定源卡片
-        const lockedNodes = newNodes.map((node) => {
-          if (atomNodeIds.includes(node.id)) {
-            return { ...node, data: { ...node.data, isLocked: true } } as CardNode;
-          }
-          return node;
-        });
-
-        set({
-          nodes: lockedNodes,
+          set({
+          nodes: newNodes,
           pendingDialogCreation: null,
           hasUserCreatedNode: true,
+          activeDialogId: dialogId,
         });
         get().setEdges(newEdges);
       },
 
       cancelDialogCreation: () => {
         set({ pendingDialogCreation: null });
+      },
+
+      activeDialogId: null,
+      openDialog: (id: string | null) => {
+        set({ activeDialogId: id });
       },
     }),
     {

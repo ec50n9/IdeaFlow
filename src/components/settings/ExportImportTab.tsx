@@ -94,6 +94,33 @@ export function ExportImportTab() {
 
     try {
       const data = await readJsonFile<unknown>(file);
+
+      // 兼容旧格式：直接包含 providers 数组但没有 exportMeta
+      if (
+        typeof data === 'object' &&
+        data !== null &&
+        !('exportMeta' in data) &&
+        Array.isArray((data as Record<string, unknown>).providers)
+      ) {
+        const oldProviders = (data as Record<string, unknown>).providers as unknown[];
+        const validProviders = filterValidProviders(oldProviders);
+
+        if (validProviders.length === 0) {
+          setImportError('配置文件中未包含有效的可导入数据');
+          return;
+        }
+
+        const payload: ExportPayload = {
+          exportMeta: { app: 'IdeaFlow', version: 1, exportedAt: new Date().toISOString() },
+          providers: validProviders,
+        };
+
+        setImportPayload(payload);
+        setPreviewSelectedProviderIds(new Set(validProviders.map((p) => p.id)));
+        setImportPreviewOpen(true);
+        return;
+      }
+
       if (!validateExportPayload(data)) {
         setImportError('无效的配置文件格式');
         return;

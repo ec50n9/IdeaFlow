@@ -27,8 +27,6 @@ export interface CardNodeData extends Record<string, unknown> {
   atomType?: AtomType;
   /** 内容：文本内容 / 图片URL / 文件引用 */
   content?: string;
-  /** 被聚合到对话后锁定，修改时自动克隆 */
-  isLocked?: boolean;
   /** 来源：manual=用户创建, ai=模型生成 */
   sourceType?: 'manual' | 'ai';
 

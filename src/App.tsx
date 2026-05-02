@@ -11,6 +11,7 @@ import { Settings } from 'lucide-react';
 import { FloatingToolbar } from '@/components/canvas/FloatingToolbar';
 import { SettingsPanel } from '@/components/settings/SettingsPanel';
 import { DialogModelSelect } from '@/components/canvas/DialogModelSelect';
+import { DialogChat } from '@/components/dialog/DialogChat';
 import { useStore } from '@/store/useStore';
 
 export default function App() {
@@ -20,6 +21,8 @@ export default function App() {
   const pendingDialogCreation = useStore((state) => state.pendingDialogCreation);
   const confirmDialogCreation = useStore((state) => state.confirmDialogCreation);
   const cancelDialogCreation = useStore((state) => state.cancelDialogCreation);
+  const activeDialogId = useStore((state) => state.activeDialogId);
+  const openDialog = useStore((state) => state.openDialog);
   const nodes = useStore((state) => state.nodes);
 
   const handleOpenSettings = (tab: 'models' | 'export-import') => {
@@ -56,6 +59,17 @@ export default function App() {
         selectedAtomNodes={selectedAtomNodes}
         onConfirm={confirmDialogCreation}
       />
+
+      {/* 全局对话弹窗 */}
+      {activeDialogId && (
+        <DialogChat
+          open={true}
+          onOpenChange={(open) => {
+            if (!open) openDialog(null);
+          }}
+          dialogCardId={activeDialogId}
+        />
+      )}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { saveImage, getImage } from './imageDB';
+import { saveDataUrl, getFile } from './fileDB';
 
 const BASE64_IMG_REGEX = /!\[([^\]]*)\]\((data:image\/[^;]+;base64,[A-Za-z0-9+/=\s]+)\)/g;
 const IDB_REF_REGEX = /^idb:\/\/(.+)$/;
@@ -16,7 +16,7 @@ export async function extractAndStoreImages(content: string): Promise<string> {
   for (const match of matches) {
     const alt = match[1];
     const dataUrl = match[2];
-    const id = await saveImage(dataUrl);
+    const id = await saveDataUrl(dataUrl);
     result = result.replace(match[0], `![${alt}](idb://${id})`);
   }
   return result;
@@ -28,8 +28,9 @@ export async function extractAndStoreImages(content: string): Promise<string> {
 export async function resolveImageUrl(src: string): Promise<string> {
   const match = src.match(IDB_REF_REGEX);
   if (!match) return src;
-  const dataUrl = await getImage(match[1]);
-  return dataUrl || '';
+  const id = match[1];
+  const file = await getFile(id);
+  return file?.data || '';
 }
 
 /**

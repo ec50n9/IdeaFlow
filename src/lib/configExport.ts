@@ -1,4 +1,4 @@
-import { AIProviderConfig } from '@/types';
+import { AIProviderConfig, AIModelConfig } from '@/types';
 
 export interface ExportPayload {
   exportMeta: {
@@ -89,8 +89,24 @@ export function validateProvider(data: unknown): data is AIProviderConfig {
   return true;
 }
 
+function normalizeModel(model: AIModelConfig): AIModelConfig {
+  return {
+    ...model,
+    supportsVision: model.supportsVision ?? false,
+    supportsDocument: model.supportsDocument ?? false,
+    contextWindow: model.contextWindow ?? 128000,
+  };
+}
+
+function normalizeProvider(provider: AIProviderConfig): AIProviderConfig {
+  return {
+    ...provider,
+    models: provider.models.map((model) => normalizeModel(model)),
+  };
+}
+
 export function filterValidProviders(items: unknown[]): AIProviderConfig[] {
-  return items.filter(validateProvider) as AIProviderConfig[];
+  return items.filter(validateProvider).map((p) => normalizeProvider(p as AIProviderConfig)) as AIProviderConfig[];
 }
 
 export function mergeProviders(

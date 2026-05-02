@@ -14,8 +14,7 @@ import { useStore } from '@/store/useStore';
 import { CardNodeComponent } from './CardNode';
 import { v4 as uuidv4 } from 'uuid';
 import { isInputElement } from '@/lib/utils';
-import { saveImage } from '@/lib/imageDB';
-import { CreateMenu } from './CreateMenu';
+import { saveFile } from '@/lib/fileDB';
 
 const nodeTypes = {
   cardNode: CardNodeComponent,
@@ -108,10 +107,9 @@ export const Canvas = () => {
   const lastTouchPos = useRef<{ x: number; y: number } | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const dragCounter = useRef(0);
-  const [createMenuOpen, setCreateMenuOpen] = useState(false);
   const pendingPosition = useRef<{ x: number; y: number } | null>(null);
 
-  // ── 双击空白处弹出创建菜单 ──
+  // ── 双击空白处直接创建文本卡片 ──
   const handlePaneClick = useCallback(
     (event: React.MouseEvent<Element>) => {
       const now = Date.now();
@@ -123,45 +121,25 @@ export const Canvas = () => {
           x: event.clientX,
           y: event.clientY,
         });
-        pendingPosition.current = position;
-        setCreateMenuOpen(true);
+        addNode({
+          id: uuidv4(),
+          type: 'cardNode',
+          position,
+          data: {
+            cardType: 'atom',
+            atomType: 'text',
+            content: '',
+            status: 'idle',
+            sourceType: 'manual',
+            isEditing: true,
+          },
+        });
+        setHasUserCreatedNode(true);
       }
       lastClickTime.current = now;
     },
-    [screenToFlowPosition]
+    [screenToFlowPosition, addNode, setHasUserCreatedNode]
   );
-
-  const handleCreateAtom = useCallback(() => {
-    if (!pendingPosition.current) return;
-    addNode({
-      id: uuidv4(),
-      type: 'cardNode',
-      position: pendingPosition.current,
-      data: {
-        cardType: 'atom',
-        atomType: 'text',
-        content: '',
-        status: 'idle',
-        sourceType: 'manual',
-        isEditing: true,
-      },
-    });
-    setHasUserCreatedNode(true);
-  }, [addNode, setHasUserCreatedNode]);
-
-  const openDialogCreation = useStore((state) => state.openDialogCreation);
-
-  const handleCreateDialog = useCallback(() => {
-    if (!pendingPosition.current) return;
-
-    // 收集当前选中的原子卡片
-    const selectedAtomIds = nodes
-      .filter((n) => n.selected && n.data.cardType === 'atom')
-      .map((n) => n.id);
-
-    openDialogCreation(selectedAtomIds, pendingPosition.current);
-    setHasUserCreatedNode(true);
-  }, [nodes, openDialogCreation, setHasUserCreatedNode]);
 
   const handlePaneTouchEnd = useCallback(
     (event: React.TouchEvent) => {
@@ -183,16 +161,96 @@ export const Canvas = () => {
             x: touch.clientX,
             y: touch.clientY,
           });
-          pendingPosition.current = position;
-          setCreateMenuOpen(true);
+          addNode({
+            id: uuidv4(),
+            type: 'cardNode',
+            position,
+            data: {
+              cardType: 'atom',
+              atomType: 'text',
+              content: '',
+              status: 'idle',
+              sourceType: 'manual',
+              isEditing: true,
+            },
+          });
+          setHasUserCreatedNode(true);
         }
       }
 
       lastTouchTime.current = now;
       lastTouchPos.current = { x: touch.clientX, y: touch.clientY };
     },
-    [screenToFlowPosition]
+    [screenToFlowPosition, addNode, setHasUserCreatedNode]
   );
+
+  // ── 文件处理公共逻辑 ──
+  const processFile = useCallback(async (file: File, position: { x: number; y: number }, index: number) => {
+    const offsetX = index * 20;
+    const offsetY = index * 20;
+    const finalPosition = { x: position.x + offsetX, y: position.y + offsetY };
+
+    if (file.type.startsWith('image/')) {
+      const id = await saveFile(file);
+      addNode({
+        id: uuidv4(),
+        type: 'cardNode',
+        position: finalPosition,
+        data: {
+          cardType: 'atom',
+          atomType: 'image',
+          content: `idb://${id}`,
+          status: 'idle',
+          sourceType: 'manual',
+        },
+      });
+      setHasUserCreatedNode(true);
+    } else {
+      const isText =
+        file.type.startsWith('text/') ||
+        file.name.endsWith('.md') ||
+        file.name.endsWith('.json') ||
+        file.name.endsWith('.txt') ||
+        file.name.endsWith('.csv');
+
+      if (isText && file.size < 1024 * 1024) {
+        const reader = new FileReader();
+        reader.onload = async (ev) => {
+          const text = ev.target?.result as string;
+          await saveFile(file);
+          addNode({
+            id: uuidv4(),
+            type: 'cardNode',
+            position: finalPosition,
+            data: {
+              cardType: 'atom',
+              atomType: 'file',
+              content: `[文件: ${file.name}]\n\n${text.slice(0, 50000)}${text.length > 50000 ? '\n\n...（内容已截断）' : ''}`,
+              status: 'idle',
+              sourceType: 'manual',
+            },
+          });
+          setHasUserCreatedNode(true);
+        };
+        reader.readAsText(file);
+      } else {
+        await saveFile(file);
+        addNode({
+          id: uuidv4(),
+          type: 'cardNode',
+          position: finalPosition,
+          data: {
+            cardType: 'atom',
+            atomType: 'file',
+            content: `[文件: ${file.name}]\n类型: ${file.type || '未知'}\n大小: ${(file.size / 1024).toFixed(1)} KB`,
+            status: 'idle',
+            sourceType: 'manual',
+          },
+        });
+        setHasUserCreatedNode(true);
+      }
+    }
+  }, [addNode, setHasUserCreatedNode]);
 
   // ── 拖拽文件到画布 ──
   const handleDragEnter = useCallback((e: React.DragEvent) => {
@@ -230,73 +288,49 @@ export const Canvas = () => {
     });
 
     files.forEach((file, index) => {
-      const offsetX = index * 20;
-      const offsetY = index * 20;
-
-      if (file.type.startsWith('image/')) {
-        const reader = new FileReader();
-        reader.onload = async (ev) => {
-          const dataUrl = ev.target?.result as string;
-          const id = await saveImage(dataUrl);
-          addNode({
-            id: uuidv4(),
-            type: 'cardNode',
-            position: { x: position.x + offsetX, y: position.y + offsetY },
-            data: {
-              cardType: 'atom',
-              atomType: 'image',
-              content: `idb://${id}`,
-              status: 'idle',
-              sourceType: 'manual',
-            },
-          });
-          setHasUserCreatedNode(true);
-        };
-        reader.readAsDataURL(file);
-      } else {
-        const isText = file.type.startsWith('text/') ||
-          file.name.endsWith('.md') ||
-          file.name.endsWith('.json') ||
-          file.name.endsWith('.txt') ||
-          file.name.endsWith('.csv');
-
-        if (isText && file.size < 1024 * 1024) {
-          const reader = new FileReader();
-          reader.onload = (ev) => {
-            const text = ev.target?.result as string;
-            addNode({
-              id: uuidv4(),
-              type: 'cardNode',
-              position: { x: position.x + offsetX, y: position.y + offsetY },
-              data: {
-                cardType: 'atom',
-                atomType: 'file',
-                content: `[文件: ${file.name}]\n\n${text.slice(0, 50000)}${text.length > 50000 ? '\n\n...（内容已截断）' : ''}`,
-                status: 'idle',
-                sourceType: 'manual',
-              },
-            });
-            setHasUserCreatedNode(true);
-          };
-          reader.readAsText(file);
-        } else {
-          addNode({
-            id: uuidv4(),
-            type: 'cardNode',
-            position: { x: position.x + offsetX, y: position.y + offsetY },
-            data: {
-              cardType: 'atom',
-              atomType: 'file',
-              content: `[文件: ${file.name}]\n类型: ${file.type || '未知'}\n大小: ${(file.size / 1024).toFixed(1)} KB`,
-              status: 'idle',
-              sourceType: 'manual',
-            },
-          });
-          setHasUserCreatedNode(true);
-        }
-      }
+      processFile(file, position, index);
     });
-  }, [screenToFlowPosition, addNode, setHasUserCreatedNode]);
+  }, [screenToFlowPosition, processFile]);
+
+  // ── 粘贴到画布 ──
+  const handlePaste = useCallback((e: ClipboardEvent) => {
+    if (isInputElement(e.target as HTMLElement)) return;
+    e.preventDefault();
+
+    const files = Array.from(e.clipboardData?.files || []);
+    const text = e.clipboardData?.getData('text/plain') || '';
+
+    const centerPosition = screenToFlowPosition({
+      x: window.innerWidth / 2,
+      y: window.innerHeight / 2,
+    });
+
+    if (files.length > 0) {
+      files.forEach((file, index) => {
+        processFile(file, centerPosition, index);
+      });
+    } else if (text.trim()) {
+      addNode({
+        id: uuidv4(),
+        type: 'cardNode',
+        position: centerPosition,
+        data: {
+          cardType: 'atom',
+          atomType: 'text',
+          content: text,
+          status: 'idle',
+          sourceType: 'manual',
+          isEditing: false,
+        },
+      });
+      setHasUserCreatedNode(true);
+    }
+  }, [screenToFlowPosition, addNode, setHasUserCreatedNode, processFile]);
+
+  useEffect(() => {
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, [handlePaste]);
 
   // Global keyboard delete support
   useEffect(() => {
@@ -343,7 +377,7 @@ export const Canvas = () => {
         <Panel position="top-left" className="bg-background/80 backdrop-blur-md px-4 py-3 rounded-xl shadow-sm border m-4 flex flex-col gap-1 z-50 pointer-events-none">
           <h1 className="font-semibold tracking-tight text-lg">思维流引擎</h1>
           {!hasUserCreatedNode && (
-            <p className="text-sm text-muted-foreground">双击画布创建卡片，或拖拽文件到此处</p>
+            <p className="text-sm text-muted-foreground">双击画布创建文本卡片，或拖拽/粘贴文件到此处</p>
           )}
           <SelectedNodeStats />
         </Panel>
@@ -360,16 +394,6 @@ export const Canvas = () => {
           </div>
         </div>
       )}
-
-      {/* 创建菜单 */}
-      <CreateMenu
-        open={createMenuOpen}
-        onOpenChange={setCreateMenuOpen}
-        onCreateAtom={handleCreateAtom}
-        onCreateDialog={handleCreateDialog}
-      />
-
-
     </div>
   );
 };
