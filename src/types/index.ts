@@ -59,15 +59,18 @@ export interface AIModelConfig {
   id: string;
   protocol: ModelProtocol;
   model: string;
-  supportsText: boolean;
-  supportsTextToImage: boolean;
-  supportsImageToImage: boolean;
+  /** 支持文本对话 */
+  chat: boolean;
+  /** 支持视觉理解（图生文） */
+  vision: boolean;
+  /** 支持图像生成（文生图） */
+  imageGeneration: boolean;
+  /** 支持图像编辑（图生图） */
+  imageEditing: boolean;
+  /** 支持文档解析 */
+  documentParsing: boolean;
   /** 仅 openai-responses 协议下用于图像生成/编辑的模型（如 gpt-image-2） */
   imageModel?: string;
-  /** 支持看图说话（图生文） */
-  supportsVision: boolean;
-  /** 支持解析文件/文档 */
-  supportsDocument: boolean;
   /** 上下文窗口大小（token） */
   contextWindow: number;
 }

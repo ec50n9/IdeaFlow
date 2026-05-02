@@ -64,8 +64,8 @@ export function resolveModel(modelRef: string): { providerConfig: AIProviderConf
 
 function inferMode(modelConfig: AIModelConfig, outputType: string): CallMode {
   if (outputType === 'image') {
-    if (modelConfig.supportsTextToImage) return 'generateImage';
-    if (modelConfig.supportsImageToImage) return 'editImage';
+    if (modelConfig.imageGeneration) return 'generateImage';
+    if (modelConfig.imageEditing) return 'editImage';
   }
   return 'chat';
 }
@@ -73,18 +73,18 @@ function inferMode(modelConfig: AIModelConfig, outputType: string): CallMode {
 function validateCapability(modelConfig: AIModelConfig, mode: CallMode): void {
   switch (mode) {
     case 'chat':
-      if (!modelConfig.supportsText) {
-        throw new Error(`模型 "${modelConfig.model}" 不支持文生文功能`);
+      if (!modelConfig.chat) {
+        throw new Error(`模型 "${modelConfig.model}" 不支持文本对话功能`);
       }
       break;
     case 'generateImage':
-      if (!modelConfig.supportsTextToImage) {
-        throw new Error(`模型 "${modelConfig.model}" 不支持文生图功能`);
+      if (!modelConfig.imageGeneration) {
+        throw new Error(`模型 "${modelConfig.model}" 不支持图像生成功能`);
       }
       break;
     case 'editImage':
-      if (!modelConfig.supportsImageToImage) {
-        throw new Error(`模型 "${modelConfig.model}" 不支持图生图功能`);
+      if (!modelConfig.imageEditing) {
+        throw new Error(`模型 "${modelConfig.model}" 不支持图像编辑功能`);
       }
       break;
   }

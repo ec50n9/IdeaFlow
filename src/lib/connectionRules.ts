@@ -12,11 +12,11 @@ export interface ConnectionCheckResult {
 export function getRequiredCapabilitiesForAtom(atomType: AtomType): string[] {
   switch (atomType) {
     case 'text':
-      return ['supportsText'];
+      return ['chat'];
     case 'image':
-      return ['supportsVision', 'supportsImageToImage', 'supportsTextToImage'];
+      return ['vision', 'imageEditing', 'imageGeneration'];
     case 'file':
-      return ['supportsDocument'];
+      return ['documentParsing'];
     default:
       return [];
   }
@@ -56,19 +56,19 @@ export function canConnectAtomToDialog(
     return { allowed: true };
   }
 
-  // 检查是否满足任一所需能力（对于图片，只要支持 vision / imageToImage / textToImage 之一即可）
+  // 检查是否满足任一所需能力（对于图片，只要支持 vision / imageEditing / imageGeneration 之一即可）
   const hasCapability = requiredCapabilities.some((cap) => {
     switch (cap) {
-      case 'supportsText':
-        return model.supportsText;
-      case 'supportsVision':
-        return model.supportsVision;
-      case 'supportsImageToImage':
-        return model.supportsImageToImage;
-      case 'supportsTextToImage':
-        return model.supportsTextToImage;
-      case 'supportsDocument':
-        return model.supportsDocument;
+      case 'chat':
+        return model.chat;
+      case 'vision':
+        return model.vision;
+      case 'imageEditing':
+        return model.imageEditing;
+      case 'imageGeneration':
+        return model.imageGeneration;
+      case 'documentParsing':
+        return model.documentParsing;
       default:
         return false;
     }

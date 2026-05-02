@@ -26,11 +26,11 @@ const PROTOCOL_LABELS: Record<ModelProtocol, string> = {
 
 function getCapabilityLabels(model: AIModelConfig): string[] {
   const labels: string[] = [];
-  if (model.supportsText) labels.push('文生文');
-  if (model.supportsTextToImage) labels.push('文生图');
-  if (model.supportsImageToImage) labels.push('图生图');
-  if (model.supportsVision) labels.push('视觉');
-  if (model.supportsDocument) labels.push('文档');
+  if (model.chat) labels.push('文本对话');
+  if (model.vision) labels.push('视觉理解');
+  if (model.imageGeneration) labels.push('图像生成');
+  if (model.imageEditing) labels.push('图像编辑');
+  if (model.documentParsing) labels.push('文档解析');
   return labels;
 }
 
@@ -43,8 +43,11 @@ function normalizeProvider(provider: AIProviderConfig): AIProviderConfig {
     ...provider,
     models: provider.models.map((model) => ({
       ...model,
-      supportsVision: model.supportsVision ?? false,
-      supportsDocument: model.supportsDocument ?? false,
+      chat: model.chat ?? true,
+      vision: model.vision ?? false,
+      imageGeneration: model.imageGeneration ?? false,
+      imageEditing: model.imageEditing ?? false,
+      documentParsing: model.documentParsing ?? false,
       contextWindow: model.contextWindow ?? 128000,
     })),
   };
@@ -68,11 +71,11 @@ export function ModelConfigTab() {
           id: uuidv4(),
           protocol: 'openai',
           model: 'gpt-3.5-turbo',
-          supportsText: true,
-          supportsTextToImage: false,
-          supportsImageToImage: false,
-          supportsVision: false,
-          supportsDocument: false,
+          chat: true,
+          vision: false,
+          imageGeneration: false,
+          imageEditing: false,
+          documentParsing: false,
           contextWindow: 128000,
         }
       ]
@@ -211,11 +214,11 @@ export function ModelConfigTab() {
                                 id: uuidv4(), 
                                 protocol: getDefaultProtocol(),
                                 model: '',
-                                supportsText: true,
-                                supportsTextToImage: false,
-                                supportsImageToImage: false,
-                                supportsVision: false,
-                                supportsDocument: false,
+                                chat: true,
+                                vision: false,
+                                imageGeneration: false,
+                                imageEditing: false,
+                                documentParsing: false,
                                 contextWindow: 128000,
                               }
                            ]
@@ -245,7 +248,7 @@ export function ModelConfigTab() {
                                onValueChange={value => {
                                   const newModels = [...editingProvider.models];
                                   newModels[index].protocol = value as ModelProtocol;
-                                  if (value === 'openai-responses' && (newModels[index].supportsTextToImage || newModels[index].supportsImageToImage) && !newModels[index].imageModel) {
+                                  if (value === 'openai-responses' && (newModels[index].imageGeneration || newModels[index].imageEditing) && !newModels[index].imageModel) {
                                     newModels[index].imageModel = 'gpt-image-2';
                                   }
                                   setEditingProvider({...editingProvider, models: newModels});
@@ -274,60 +277,60 @@ export function ModelConfigTab() {
                          <div className="flex flex-wrap gap-5">
                            <label className="flex items-center gap-2 text-sm cursor-pointer">
                              <Checkbox
-                               checked={mod.supportsText}
+                               checked={mod.chat}
                                onCheckedChange={(checked) => {
                                  const newModels = [...editingProvider.models];
-                                 newModels[index].supportsText = checked === true;
+                                 newModels[index].chat = checked === true;
                                  setEditingProvider({...editingProvider, models: newModels});
                                }}
                              />
-                             <span>文生文</span>
+                             <span>文本对话</span>
                            </label>
                            <label className="flex items-center gap-2 text-sm cursor-pointer">
                              <Checkbox
-                               checked={mod.supportsTextToImage}
+                               checked={mod.vision}
                                onCheckedChange={(checked) => {
                                  const newModels = [...editingProvider.models];
-                                 newModels[index].supportsTextToImage = checked === true;
+                                 newModels[index].vision = checked === true;
+                                 setEditingProvider({...editingProvider, models: newModels});
+                               }}
+                             />
+                             <span>视觉理解</span>
+                           </label>
+                           <label className="flex items-center gap-2 text-sm cursor-pointer">
+                             <Checkbox
+                               checked={mod.imageGeneration}
+                               onCheckedChange={(checked) => {
+                                 const newModels = [...editingProvider.models];
+                                 newModels[index].imageGeneration = checked === true;
                                  if (checked === true && mod.protocol === 'openai-responses' && !newModels[index].imageModel) {
                                    newModels[index].imageModel = 'gpt-image-2';
                                  }
                                  setEditingProvider({...editingProvider, models: newModels});
                                }}
                              />
-                             <span>文生图</span>
+                             <span>图像生成</span>
                            </label>
                            <label className="flex items-center gap-2 text-sm cursor-pointer">
                              <Checkbox
-                               checked={mod.supportsImageToImage}
+                               checked={mod.imageEditing}
                                onCheckedChange={(checked) => {
                                  const newModels = [...editingProvider.models];
-                                 newModels[index].supportsImageToImage = checked === true;
+                                 newModels[index].imageEditing = checked === true;
                                  if (checked === true && mod.protocol === 'openai-responses' && !newModels[index].imageModel) {
                                    newModels[index].imageModel = 'gpt-image-2';
                                  }
                                  setEditingProvider({...editingProvider, models: newModels});
                                }}
                              />
-                             <span>图生图</span>
+                             <span>图像编辑</span>
                            </label>
                            <label className="flex items-center gap-2 text-sm cursor-pointer">
                              <Checkbox
-                               checked={mod.supportsVision}
+                               checked={mod.documentParsing}
                                onCheckedChange={(checked) => {
                                  const newModels = [...editingProvider.models];
-                                 newModels[index].supportsVision = checked === true;
-                                 setEditingProvider({...editingProvider, models: newModels});
-                               }}
-                             />
-                             <span>视觉输入</span>
-                           </label>
-                           <label className="flex items-center gap-2 text-sm cursor-pointer">
-                             <Checkbox
-                               checked={mod.supportsDocument}
-                               onCheckedChange={(checked) => {
-                                 const newModels = [...editingProvider.models];
-                                 newModels[index].supportsDocument = checked === true;
+                                 newModels[index].documentParsing = checked === true;
                                  setEditingProvider({...editingProvider, models: newModels});
                                }}
                              />
@@ -349,7 +352,7 @@ export function ModelConfigTab() {
                            />
                          </div>
 
-                         {mod.protocol === 'openai-responses' && (mod.supportsTextToImage || mod.supportsImageToImage) && (
+                         {mod.protocol === 'openai-responses' && (mod.imageGeneration || mod.imageEditing) && (
                            <div className="grid gap-2">
                              <Label className="text-xs text-muted-foreground">Responses 图像模型</Label>
                              <Select

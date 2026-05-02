@@ -92,8 +92,8 @@ export function validateProvider(data: unknown): data is AIProviderConfig {
 function normalizeModel(model: AIModelConfig): AIModelConfig {
   return {
     ...model,
-    supportsVision: model.supportsVision ?? false,
-    supportsDocument: model.supportsDocument ?? false,
+    vision: model.vision ?? false,
+    documentParsing: model.documentParsing ?? false,
     contextWindow: model.contextWindow ?? 128000,
   };
 }

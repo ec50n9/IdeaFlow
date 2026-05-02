@@ -23,14 +23,14 @@ function evaluateModelAgainstContext(
   let disabled = false;
   let reason = '';
 
-  // 规则 A：包含图片但模型不支持 vision 且不支持图生图且不支持文生图
-  if (context.hasImage && !model.supportsVision && !model.supportsImageToImage && !model.supportsTextToImage) {
+  // 规则 A：包含图片但模型不支持 vision 且不支持图像编辑且不支持图像生成
+  if (context.hasImage && !model.vision && !model.imageEditing && !model.imageGeneration) {
     disabled = true;
     reason = '不支持视觉/图像能力';
   }
 
-  // 规则 B：包含文件但模型不支持 document
-  if (context.hasDocument && !model.supportsDocument) {
+  // 规则 B：包含文件但模型不支持文档解析
+  if (context.hasDocument && !model.documentParsing) {
     disabled = true;
     reason = '不支持文档解析';
   }

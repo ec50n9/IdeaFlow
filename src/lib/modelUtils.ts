@@ -46,11 +46,11 @@ export interface CapabilityMeta {
 }
 
 export const MODEL_CAPABILITIES: CapabilityMeta[] = [
-  { key: 'supportsText', label: '文本处理', shortLabel: '文本' },
-  { key: 'supportsVision', label: '视觉输入', shortLabel: '视觉' },
-  { key: 'supportsTextToImage', label: '文生图', shortLabel: '文生图' },
-  { key: 'supportsImageToImage', label: '图生图', shortLabel: '图生图' },
-  { key: 'supportsDocument', label: '文档解析', shortLabel: '文档' },
+  { key: 'chat', label: '文本对话', shortLabel: '对话' },
+  { key: 'vision', label: '视觉理解', shortLabel: '视觉' },
+  { key: 'imageGeneration', label: '图像生成', shortLabel: '生图' },
+  { key: 'imageEditing', label: '图像编辑', shortLabel: '修图' },
+  { key: 'documentParsing', label: '文档解析', shortLabel: '文档' },
 ];
 
 export const CAPABILITY_LABEL_MAP: Record<string, string> = Object.fromEntries(

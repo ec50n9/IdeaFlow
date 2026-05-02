@@ -338,7 +338,7 @@ export const useStore = create<AppState>()(
     }),
     {
       name: 'mindflow-storage',
-      version: 5,
+      version: 6,
       migrate: (persistedState: any, version) => {
         try {
           const state = persistedState as any;
@@ -414,6 +414,31 @@ export const useStore = create<AppState>()(
             state.nodes = newNodes;
             state.edges = newEdges;
             delete state.actions;
+          }
+
+          // v5 -> v6: 模型能力字段统一重构
+          //   supportsText → chat
+          //   supportsTextToImage → imageGeneration
+          //   supportsImageToImage → imageEditing
+          //   supportsVision → vision
+          //   supportsDocument → documentParsing
+          if (version < 6) {
+            if (Array.isArray(state.providers)) {
+              for (const prov of state.providers) {
+                for (const model of prov.models || []) {
+                  model.chat = typeof model.supportsText === 'boolean' ? model.supportsText : true;
+                  model.imageGeneration = typeof model.supportsTextToImage === 'boolean' ? model.supportsTextToImage : false;
+                  model.imageEditing = typeof model.supportsImageToImage === 'boolean' ? model.supportsImageToImage : false;
+                  model.vision = typeof model.supportsVision === 'boolean' ? model.supportsVision : false;
+                  model.documentParsing = typeof model.supportsDocument === 'boolean' ? model.supportsDocument : false;
+                  delete model.supportsText;
+                  delete model.supportsTextToImage;
+                  delete model.supportsImageToImage;
+                  delete model.supportsVision;
+                  delete model.supportsDocument;
+                }
+              }
+            }
           }
 
           // v4 -> v5: dialog 模型选择语义硬化（无数据结构变更）
@@ -510,11 +535,20 @@ export const useStore = create<AppState>()(
             );
             for (const prov of state.providers) {
               for (const model of prov.models || []) {
-                if (typeof model.supportsVision !== 'boolean') {
-                  model.supportsVision = false;
+                if (typeof model.chat !== 'boolean') {
+                  model.chat = true;
                 }
-                if (typeof model.supportsDocument !== 'boolean') {
-                  model.supportsDocument = false;
+                if (typeof model.vision !== 'boolean') {
+                  model.vision = false;
+                }
+                if (typeof model.imageGeneration !== 'boolean') {
+                  model.imageGeneration = false;
+                }
+                if (typeof model.imageEditing !== 'boolean') {
+                  model.imageEditing = false;
+                }
+                if (typeof model.documentParsing !== 'boolean') {
+                  model.documentParsing = false;
                 }
                 if (typeof model.contextWindow !== 'number') {
                   model.contextWindow = 128000;
