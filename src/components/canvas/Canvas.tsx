@@ -1,4 +1,4 @@
-import { useCallback, useRef, useEffect } from 'react';
+import { useCallback, useRef, useEffect, useState } from 'react';
 import {
   ReactFlow,
   useReactFlow,
@@ -11,14 +11,12 @@ import {
 import '@xyflow/react/dist/style.css';
 
 import { useStore } from '@/store/useStore';
-import { IdeaNodeComponent } from './IdeaNode';
-import { ActionNodeComponent } from './ActionNode';
+import { CardNodeComponent } from './CardNode';
 import { v4 as uuidv4 } from 'uuid';
 import { isInputElement } from '@/lib/utils';
 
 const nodeTypes = {
-  ideaNode: IdeaNodeComponent,
-  actionNode: ActionNodeComponent,
+  cardNode: CardNodeComponent,
 };
 
 function SelectedNodeStats() {
@@ -27,18 +25,20 @@ function SelectedNodeStats() {
 
   if (selected.length === 0) return null;
 
-  const ideaNodes = selected.filter((n) => n.type === 'ideaNode');
-  const actionNodes = selected.filter((n) => n.type === 'actionNode');
+  const atomNodes = selected.filter((n) => n.data.cardType === 'atom');
+  const contextNodes = selected.filter((n) => n.data.cardType === 'context');
+  const executionNodes = selected.filter((n) => n.data.cardType === 'execution');
 
-  const textCount = ideaNodes.filter((n) => n.data.mediaType === 'text').length;
-  const imageCount = ideaNodes.filter((n) => n.data.mediaType === 'image').length;
-  const mixedCount = ideaNodes.filter((n) => n.data.mediaType === 'mixed').length;
+  const textCount = atomNodes.filter((n) => n.data.atomType === 'text').length;
+  const imageCount = atomNodes.filter((n) => n.data.atomType === 'image').length;
+  const fileCount = atomNodes.filter((n) => n.data.atomType === 'file').length;
 
   const parts: string[] = [];
   if (textCount) parts.push(`${textCount} 文本`);
   if (imageCount) parts.push(`${imageCount} 图片`);
-  if (mixedCount) parts.push(`${mixedCount} 混合`);
-  if (actionNodes.length) parts.push(`${actionNodes.length} 动作`);
+  if (fileCount) parts.push(`${fileCount} 文件`);
+  if (contextNodes.length) parts.push(`${contextNodes.length} 上下文`);
+  if (executionNodes.length) parts.push(`${executionNodes.length} 执行`);
 
   return (
     <p className="text-[11px] text-muted-foreground font-mono">
@@ -62,13 +62,14 @@ export const Canvas = () => {
   const lastClickTime = useRef<number>(0);
   const lastTouchTime = useRef<number>(0);
   const lastTouchPos = useRef<{ x: number; y: number } | null>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const dragCounter = useRef(0); // 处理嵌套元素导致的 dragenter/dragleave 闪烁
 
   const handlePaneClick = useCallback(
     (event: React.MouseEvent<Element>) => {
       const now = Date.now();
       const timeDiff = now - lastClickTime.current;
 
-      // If time between clicks is less than 300ms, consider it a double click
       if (timeDiff < 300) {
         event.preventDefault();
         const position = screenToFlowPosition({
@@ -78,13 +79,15 @@ export const Canvas = () => {
 
         addNode({
           id: uuidv4(),
-          type: 'ideaNode',
+          type: 'cardNode',
           position,
           data: {
+            cardType: 'atom',
+            atomType: 'text',
             content: '',
             status: 'idle',
-            isEditing: true, // Start in edit mode
-            sourceType: 'manual'
+            sourceType: 'manual',
+            isEditing: true,
           },
         });
         setHasUserCreatedNode(true);
@@ -96,7 +99,6 @@ export const Canvas = () => {
 
   const handlePaneTouchEnd = useCallback(
     (event: React.TouchEvent) => {
-      // Ignore touches on nodes/edges to avoid creating nodes when tapping a node
       const target = event.target as HTMLElement;
       if (target.closest('.react-flow__node') || target.closest('.react-flow__edge')) return;
 
@@ -118,13 +120,15 @@ export const Canvas = () => {
 
           addNode({
             id: uuidv4(),
-            type: 'ideaNode',
+            type: 'cardNode',
             position,
             data: {
+              cardType: 'atom',
+              atomType: 'text',
               content: '',
               status: 'idle',
+              sourceType: 'manual',
               isEditing: true,
-              sourceType: 'manual'
             },
           });
           setHasUserCreatedNode(true);
@@ -137,7 +141,112 @@ export const Canvas = () => {
     [screenToFlowPosition, addNode, setHasUserCreatedNode]
   );
 
-  // Global keyboard delete support (desktop)
+  // ── 拖拽文件到画布 ──
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    dragCounter.current += 1;
+    if (e.dataTransfer.types.includes('Files')) {
+      setIsDragOver(true);
+    }
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    dragCounter.current -= 1;
+    if (dragCounter.current === 0) {
+      setIsDragOver(false);
+    }
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    dragCounter.current = 0;
+    setIsDragOver(false);
+
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length === 0) return;
+
+    const position = screenToFlowPosition({
+      x: e.clientX,
+      y: e.clientY,
+    });
+
+    files.forEach((file, index) => {
+      const offsetX = index * 20;
+      const offsetY = index * 20;
+
+      if (file.type.startsWith('image/')) {
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          const dataUrl = ev.target?.result as string;
+          addNode({
+            id: uuidv4(),
+            type: 'cardNode',
+            position: { x: position.x + offsetX, y: position.y + offsetY },
+            data: {
+              cardType: 'atom',
+              atomType: 'image',
+              content: dataUrl,
+              status: 'idle',
+              sourceType: 'manual',
+            },
+          });
+          setHasUserCreatedNode(true);
+        };
+        reader.readAsDataURL(file);
+      } else {
+        // 非图片文件：先读取为 text（小文件）或只存文件名（大文件）
+        const isText = file.type.startsWith('text/') ||
+          file.name.endsWith('.md') ||
+          file.name.endsWith('.json') ||
+          file.name.endsWith('.txt') ||
+          file.name.endsWith('.csv');
+
+        if (isText && file.size < 1024 * 1024) {
+          const reader = new FileReader();
+          reader.onload = (ev) => {
+            const text = ev.target?.result as string;
+            addNode({
+              id: uuidv4(),
+              type: 'cardNode',
+              position: { x: position.x + offsetX, y: position.y + offsetY },
+              data: {
+                cardType: 'atom',
+                atomType: 'file',
+                content: `[文件: ${file.name}]\n\n${text.slice(0, 50000)}${text.length > 50000 ? '\n\n...（内容已截断）' : ''}`,
+                status: 'idle',
+                sourceType: 'manual',
+              },
+            });
+            setHasUserCreatedNode(true);
+          };
+          reader.readAsText(file);
+        } else {
+          // 大文件或二进制文件：只存引用信息
+          addNode({
+            id: uuidv4(),
+            type: 'cardNode',
+            position: { x: position.x + offsetX, y: position.y + offsetY },
+            data: {
+              cardType: 'atom',
+              atomType: 'file',
+              content: `[文件: ${file.name}]\n类型: ${file.type || '未知'}\n大小: ${(file.size / 1024).toFixed(1)} KB`,
+              status: 'idle',
+              sourceType: 'manual',
+            },
+          });
+          setHasUserCreatedNode(true);
+        }
+      }
+    });
+  }, [screenToFlowPosition, addNode, setHasUserCreatedNode]);
+
+  // Global keyboard delete support
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'Delete' && e.key !== 'Backspace') return;
@@ -157,6 +266,10 @@ export const Canvas = () => {
     <div
       className="w-full h-full relative"
       onTouchEnd={handlePaneTouchEnd}
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
     >
       <ReactFlow
         nodes={nodes}
@@ -178,11 +291,23 @@ export const Canvas = () => {
         <Panel position="top-left" className="bg-background/80 backdrop-blur-md px-4 py-3 rounded-xl shadow-sm border m-4 flex flex-col gap-1 z-50 pointer-events-none">
           <h1 className="font-semibold tracking-tight text-lg">思维流引擎</h1>
           {!hasUserCreatedNode && (
-            <p className="text-sm text-muted-foreground">双击画布添加想法</p>
+            <p className="text-sm text-muted-foreground">双击画布添加卡片，或拖拽文件到此处</p>
           )}
           <SelectedNodeStats />
         </Panel>
       </ReactFlow>
+
+      {/* 拖拽文件视觉反馈 */}
+      {isDragOver && (
+        <div className="absolute inset-0 z-50 bg-primary/10 backdrop-blur-sm border-4 border-primary border-dashed m-4 rounded-2xl flex items-center justify-center pointer-events-none animate-in fade-in duration-150">
+          <div className="flex flex-col items-center gap-3 text-primary">
+            <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M12 12.75l-3-3m0 0l3-3m-3 3h7.5" />
+            </svg>
+            <span className="text-lg font-medium">松开以添加文件到画布</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

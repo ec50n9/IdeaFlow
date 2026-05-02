@@ -13,104 +13,32 @@ import {
   applyNodeChanges,
   applyEdgeChanges,
 } from '@xyflow/react';
-import { AppNode, ActionConfig, AIModelConfig, AIProviderConfig, ActionTrigger } from '@/types';
-import { deriveMediaType } from '@/lib/triggerMatcher';
-import { getDefaultImagesSource } from '@/lib/processorInputs';
+import { CardNode, CardNodeData, AIProviderConfig, ContextItem } from '@/types';
 import { v4 as uuidv4 } from 'uuid';
 
-function migrateTrigger(trigger: any): ActionTrigger {
-  if (trigger && trigger.mode) {
-    return trigger as ActionTrigger;
-  }
-  if (trigger && trigger.constraints && trigger.constraints.length > 0) {
-    return {
-      mode: 'constraint',
-      constraints: trigger.constraints,
-    };
-  }
-  return {
-    mode: 'simple',
-    minNodes: trigger?.minNodes ?? 1,
-    maxNodes: trigger?.maxNodes ?? null,
-  };
-}
-
 interface AppState {
-  nodes: AppNode[];
+  nodes: CardNode[];
   edges: Edge[];
-  actions: ActionConfig[];
   providers: AIProviderConfig[];
 
-  onNodesChange: OnNodesChange<AppNode>;
+  onNodesChange: OnNodesChange<CardNode>;
   onEdgesChange: OnEdgesChange;
   onConnect: OnConnect;
 
-  addNode: (node: AppNode) => void;
-  updateNodeData: (id: string, data: Partial<AppNode['data']>) => void;
+  addNode: (node: CardNode) => void;
+  updateNodeData: (id: string, data: Partial<CardNodeData>) => void;
   deleteNode: (id: string) => void;
-  setNodes: (nodes: AppNode[]) => void;
+  setNodes: (nodes: CardNode[]) => void;
   setEdges: (edges: Edge[]) => void;
-
-  addAction: (action: ActionConfig) => void;
-  updateAction: (id: string, action: Partial<ActionConfig>) => void;
-  deleteAction: (id: string) => void;
-  syncActionNodes: (actionId: string, snapshot: ActionConfig) => void;
 
   addProvider: (provider: AIProviderConfig) => void;
   updateProvider: (id: string, provider: Partial<AIProviderConfig>) => void;
   deleteProvider: (id: string) => void;
   setProviders: (providers: AIProviderConfig[]) => void;
-  setActions: (actions: ActionConfig[]) => void;
 
   hasUserCreatedNode: boolean;
   setHasUserCreatedNode: (v: boolean) => void;
 }
-
-function createDefaultSlot(): { identifier: string; capability: 'chat' } {
-  return { identifier: '默认插槽', capability: 'chat' };
-}
-
-const defaultActions: ActionConfig[] = [
-  {
-    id: 'expand-idea',
-    name: '多维展开',
-    color: 'purple',
-    trigger: { mode: 'simple', minNodes: 1, maxNodes: 1 },
-    processor: {
-      type: 'llm',
-      payload: '请基于以下内容，多维度展开想象，并拆分成3个独立的子观点。待处理内容：\n\n{{selected_content}}',
-      slots: [createDefaultSlot()],
-      slotRef: '默认插槽',
-    },
-    output: { connectionType: 'source_to_new' }
-  },
-  {
-    id: 'translate-en',
-    name: '翻译为英文',
-    color: 'blue',
-    trigger: { mode: 'simple', minNodes: 1, maxNodes: 1 },
-    processor: {
-      type: 'llm',
-      payload: '将以下内容翻译为纯正的英文：\n\n{{selected_content}}',
-      slots: [createDefaultSlot()],
-      slotRef: '默认插槽',
-    },
-    output: { connectionType: 'source_to_new' }
-  },
-  {
-    id: 'summarize',
-    name: '总结归纳',
-    color: 'emerald',
-    trigger: { mode: 'simple', minNodes: 2, maxNodes: null },
-    processor: {
-      type: 'llm',
-      payload: '请将以下多个观点总结融合为一个核心观点：\n\n{{selected_content}}',
-      slots: [createDefaultSlot()],
-      slotRef: '默认插槽',
-    },
-    output: { connectionType: 'new_to_source' }
-  }
-];
 
 export const useStore = create<AppState>()(
   persist(
@@ -118,16 +46,21 @@ export const useStore = create<AppState>()(
       nodes: [
         {
           id: 'initial-node',
-          type: 'ideaNode',
+          type: 'cardNode',
           position: { x: window.innerWidth / 2 - 150, y: window.innerHeight / 2 - 100 },
-          data: { content: '双击进行编辑。\n\n或者双击背景添加新想法。', status: 'idle', mediaType: 'text' },
+          data: {
+            cardType: 'atom',
+            atomType: 'text',
+            content: '双击进行编辑。\n\n或者双击背景添加新卡片。',
+            status: 'idle',
+            sourceType: 'manual',
+          },
         }
       ],
       edges: [],
-      actions: defaultActions,
       providers: [],
 
-      onNodesChange: (changes: NodeChange<AppNode>[]) => {
+      onNodesChange: (changes: NodeChange<CardNode>[]) => {
         set({
           nodes: applyNodeChanges(changes, get().nodes),
         });
@@ -145,35 +78,23 @@ export const useStore = create<AppState>()(
         });
       },
 
-      addNode: (node: AppNode) => {
-        const enriched = { ...node };
-        if (enriched.type === 'ideaNode' && enriched.data.content) {
-          enriched.data = {
-            ...enriched.data,
-            mediaType: deriveMediaType(enriched.data.content),
-          };
-        }
+      addNode: (node: CardNode) => {
         set({
-          nodes: [...get().nodes, enriched as AppNode],
+          nodes: [...get().nodes, node],
         });
       },
 
-      updateNodeData: (id: string, data: Partial<AppNode['data']>) => {
+      updateNodeData: (id: string, data: Partial<CardNodeData>) => {
         set({
           nodes: get().nodes.map((node) => {
             if (node.id === id) {
-              const merged = { ...node.data, ...data };
-              // 如果更新了 content，自动推导 mediaType
-              if ('content' in data && typeof merged.content === 'string') {
-                merged.mediaType = deriveMediaType(merged.content);
-              }
               return {
                 ...node,
-                data: merged,
-              } as AppNode;
+                data: { ...node.data, ...data },
+              } as CardNode;
             }
             return node;
-          }) as AppNode[],
+          }) as CardNode[],
         });
       },
 
@@ -184,46 +105,8 @@ export const useStore = create<AppState>()(
         });
       },
 
-      setNodes: (nodes: AppNode[]) => set({ nodes }),
+      setNodes: (nodes: CardNode[]) => set({ nodes }),
       setEdges: (edges: Edge[]) => set({ edges }),
-
-      addAction: (action: ActionConfig) => {
-        set({
-          actions: [...get().actions, action],
-        });
-      },
-
-      updateAction: (id: string, actionData: Partial<ActionConfig>) => {
-        set({
-          actions: get().actions.map((act) =>
-            act.id === id ? { ...act, ...actionData } : act
-          )
-        });
-      },
-
-      deleteAction: (id: string) => {
-        set({
-          actions: get().actions.filter((act) => act.id !== id),
-        });
-      },
-
-      syncActionNodes: (actionId: string, snapshot: ActionConfig) => {
-        set({
-          nodes: get().nodes.map((node) => {
-            if (node.type !== 'actionNode') return node;
-            if (node.data.actionSnapshot.id !== actionId) return node;
-            return {
-              ...node,
-              data: {
-                ...node.data,
-                actionSnapshot: snapshot,
-                actionName: snapshot.name,
-                actionColor: snapshot.color,
-              },
-            };
-          }),
-        });
-      },
 
       addProvider: (provider: AIProviderConfig) => {
         set({
@@ -249,71 +132,123 @@ export const useStore = create<AppState>()(
         set({ providers });
       },
 
-      setActions: (actions: ActionConfig[]) => {
-        set({ actions });
-      },
-
       hasUserCreatedNode: false,
       setHasUserCreatedNode: (v: boolean) => set({ hasUserCreatedNode: v }),
     }),
     {
       name: 'mindflow-storage',
-      version: 2,
+      version: 3,
       migrate: (persistedState: any, version) => {
         try {
-          if (version < 1) {
-            const state = persistedState as any;
+          const state = persistedState as any;
+
+          // v1 -> v2 的 migrate 已存在，保留逻辑
+          if (version < 2) {
             if (Array.isArray(state.actions)) {
               state.actions = state.actions
                 .filter((action: any) => action && typeof action.id === 'string')
                 .map((action: any) => ({
                   ...action,
-                  trigger: migrateTrigger(action.trigger),
+                  trigger: action.trigger && action.trigger.mode
+                    ? action.trigger
+                    : action.trigger && action.trigger.constraints && action.trigger.constraints.length > 0
+                      ? { mode: 'constraint', constraints: action.trigger.constraints }
+                      : { mode: 'simple', minNodes: action.trigger?.minNodes ?? 1, maxNodes: action.trigger?.maxNodes ?? null },
                 }));
             }
           }
-          if (version < 2) {
-            const state = persistedState as any;
-            if (Array.isArray(state.actions)) {
-              state.actions = state.actions
-                .filter((action: any) => action && typeof action.id === 'string')
-                .map((action: any) => {
-                  if (action.processor?.type === 'llm' && action.processor?.mode === 'editImage') {
-                    return {
-                      ...action,
-                      processor: {
-                        ...action.processor,
-                        inputs: [
-                          { id: 'images', type: 'images', source: getDefaultImagesSource(action.trigger) },
-                        ],
-                      },
-                    };
-                  }
-                  return action;
-                });
+
+          // v2 -> v3: 移除 Action 概念，重构卡片概念
+          if (version < 3) {
+            const oldNodes = Array.isArray(state.nodes) ? state.nodes : [];
+            const oldEdges = Array.isArray(state.edges) ? state.edges : [];
+
+            // 收集需要删除的 actionNode ID
+            const actionNodeIds = new Set<string>();
+            const newNodes: CardNode[] = [];
+
+            for (const node of oldNodes) {
+              if (!node || typeof node.id !== 'string' || !node.data || typeof node.data !== 'object') {
+                continue;
+              }
+
+              if (node.type === 'actionNode') {
+                actionNodeIds.add(node.id);
+                continue;
+              }
+
+              if (node.type === 'ideaNode') {
+                const oldData = node.data;
+                // 推导 atomType
+                let atomType: 'text' | 'image' | 'file' = 'text';
+                const mediaType = oldData.mediaType;
+                if (mediaType === 'image') atomType = 'image';
+                else if (mediaType === 'file') atomType = 'file';
+                // mixed 默认转为 text
+
+                const newData: CardNodeData = {
+                  cardType: 'atom',
+                  atomType,
+                  content: typeof oldData.content === 'string' ? oldData.content : '',
+                  status: oldData.status || 'idle',
+                  sourceType: oldData.sourceType || 'manual',
+                  isEditing: oldData.isEditing,
+                };
+
+                // 如果是 AI 生成的，保留来源信息（简化处理）
+                if (oldData.sourceType === 'ai') {
+                  // 旧数据中的 sourceAction 等字段不再使用，仅标记为 ai 生成
+                  newData.sourceType = 'ai';
+                }
+
+                newNodes.push({
+                  id: node.id,
+                  type: 'cardNode',
+                  position: node.position || { x: 0, y: 0 },
+                  data: newData,
+                  selected: node.selected,
+                } as CardNode);
+              } else {
+                // 未知类型，尝试作为 atom 保留
+                newNodes.push({
+                  id: node.id,
+                  type: 'cardNode',
+                  position: node.position || { x: 0, y: 0 },
+                  data: {
+                    cardType: 'atom',
+                    atomType: 'text',
+                    content: '',
+                    status: 'idle',
+                    sourceType: 'manual',
+                  },
+                } as CardNode);
+              }
             }
+
+            // 过滤边：删除与 actionNode 相关的边
+            const newEdges = oldEdges.filter((edge: any) => {
+              if (!edge || typeof edge.id !== 'string') return false;
+              if (actionNodeIds.has(edge.source)) return false;
+              if (actionNodeIds.has(edge.target)) return false;
+              return true;
+            });
+
+            state.nodes = newNodes;
+            state.edges = newEdges;
+
+            // 删除 actions 字段
+            delete state.actions;
           }
 
-          // 通用数据净化：过滤掉明显损坏的节点和动作
-          const state = persistedState as any;
-          if (Array.isArray(state.actions)) {
-            state.actions = state.actions.filter(
-              (action: any) =>
-                action &&
-                typeof action.id === 'string' &&
-                typeof action.name === 'string' &&
-                action.trigger &&
-                action.processor &&
-                action.output
-            );
-          }
+          // 通用数据净化
           if (Array.isArray(state.nodes)) {
             state.nodes = state.nodes.filter(
               (node: any) =>
                 node &&
                 typeof node.id === 'string' &&
                 node.data &&
-                typeof node.data === 'object'
+                typeof node.data === 'object' &&
+                node.data.cardType
             );
           }
           if (Array.isArray(state.edges)) {
@@ -324,6 +259,30 @@ export const useStore = create<AppState>()(
                 typeof edge.source === 'string' &&
                 typeof edge.target === 'string'
             );
+          }
+          if (Array.isArray(state.providers)) {
+            state.providers = state.providers.filter(
+              (prov: any) =>
+                prov &&
+                typeof prov.id === 'string' &&
+                typeof prov.name === 'string' &&
+                typeof prov.key === 'string' &&
+                Array.isArray(prov.models)
+            );
+            // 为旧模型补充新字段默认值
+            for (const prov of state.providers) {
+              for (const model of prov.models || []) {
+                if (typeof model.supportsVision !== 'boolean') {
+                  model.supportsVision = false;
+                }
+                if (typeof model.supportsDocument !== 'boolean') {
+                  model.supportsDocument = false;
+                }
+                if (typeof model.contextWindow !== 'number') {
+                  model.contextWindow = 128000;
+                }
+              }
+            }
           }
 
           return persistedState;
@@ -356,18 +315,16 @@ export const useStore = create<AppState>()(
         },
       } as StateStorage)),
       partialize: (state) => ({
-        actions: state.actions,
         nodes: state.nodes.map((node) => {
           const base = {
             ...node,
             data: { ...node.data },
           };
-          if (node.type === 'ideaNode') {
+          if (node.data.cardType === 'atom') {
             return {
               ...base,
               data: {
                 ...node.data,
-                runningActions: [],
                 content: (typeof node.data.content === 'string' ? node.data.content : '').replace(
                   /data:image\/[^;]+;base64,[\sA-Za-z0-9+/=]+/g,
                   '[图片]'

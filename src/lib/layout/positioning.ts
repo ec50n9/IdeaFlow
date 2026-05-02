@@ -4,8 +4,10 @@ export const NODE_WIDTH = 250;
 export const NODE_HEIGHT = 100;
 export const GAP_BETWEEN_GROUPS = 120; // 新旧节点群之间的间距
 export const GAP_BETWEEN_NODES = 50;   // 新节点之间的间距
-export const ACTION_NODE_WIDTH = 168;
-export const ACTION_NODE_HEIGHT = 64;
+export const CONTEXT_NODE_WIDTH = 200;
+export const CONTEXT_NODE_HEIGHT = 80;
+export const EXECUTION_NODE_WIDTH = 180;
+export const EXECUTION_NODE_HEIGHT = 60;
 
 /**
  * 计算一组节点的包围盒和质心。
@@ -71,8 +73,8 @@ export function computeNewNodePositions(
     const startX = sourceCenter.x - totalWidth / 2;
     const baseY =
       direction === 'down'
-        ? sourceBBox.maxY + GAP_BETWEEN_GROUPS + ACTION_NODE_HEIGHT + GAP_BETWEEN_NODES
-        : sourceBBox.minY - GAP_BETWEEN_GROUPS - ACTION_NODE_HEIGHT - GAP_BETWEEN_NODES - NODE_HEIGHT;
+        ? sourceBBox.maxY + GAP_BETWEEN_GROUPS + CONTEXT_NODE_HEIGHT + GAP_BETWEEN_NODES
+        : sourceBBox.minY - GAP_BETWEEN_GROUPS - CONTEXT_NODE_HEIGHT - GAP_BETWEEN_NODES - NODE_HEIGHT;
 
     for (let i = 0; i < n; i++) {
       positions.set(newNodeIds[i], {
@@ -86,8 +88,8 @@ export function computeNewNodePositions(
     const startY = sourceCenter.y - totalHeight / 2;
     const baseX =
       direction === 'right'
-        ? sourceBBox.maxX + GAP_BETWEEN_GROUPS + ACTION_NODE_WIDTH + GAP_BETWEEN_NODES
-        : sourceBBox.minX - GAP_BETWEEN_GROUPS - ACTION_NODE_WIDTH - GAP_BETWEEN_NODES - NODE_WIDTH;
+        ? sourceBBox.maxX + GAP_BETWEEN_GROUPS + CONTEXT_NODE_WIDTH + GAP_BETWEEN_NODES
+        : sourceBBox.minX - GAP_BETWEEN_GROUPS - CONTEXT_NODE_WIDTH - GAP_BETWEEN_NODES - NODE_WIDTH;
 
     for (let i = 0; i < n; i++) {
       positions.set(newNodeIds[i], {

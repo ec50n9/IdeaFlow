@@ -1,145 +1,78 @@
 import { Node, Edge } from '@xyflow/react';
 
-export interface RunningAction {
-  taskId: string;
-  actionId: string;
-  actionName: string;
-  actionColor?: string;
-  responseLength?: number;
+export type CardType = 'atom' | 'context' | 'execution';
+
+export type AtomType = 'text' | 'image' | 'file';
+
+export interface ContextItem {
+  id: string;
+  sourceCardId: string;
+  role: 'system' | 'user' | 'assistant';
 }
 
-export type NodeMediaType = 'text' | 'image' | 'mixed';
+export interface CardNodeData extends Record<string, unknown> {
+  cardType: CardType;
 
-export interface IdeaNodeData extends Record<string, unknown> {
-  content: string;
-  status: 'idle' | 'processing' | 'error';
-  runningActions?: RunningAction[];
-  metadata?: Record<string, any>;
-  isEditing?: boolean;
+  // ===== atom 卡片专属 =====
+  /** 原子类型：文本 / 图片 / 文件 */
+  atomType?: AtomType;
+  /** 内容：文本内容 / 图片URL / 文件引用 */
+  content?: string;
+  /** 被聚合到上下文后锁定，修改时自动克隆 */
+  isLocked?: boolean;
+  /** 来源：manual=用户创建, ai=模型生成 */
   sourceType?: 'manual' | 'ai';
-  sourceAction?: string;
-  sourceProvider?: string;
-  sourceModel?: string;
-  sourceSlot?: string;
-  sourceColor?: string;
-  isEdited?: boolean;
-  actionId?: string;
-  actionSnapshot?: ActionConfig;
-  /** 节点媒体类型，根据 content 自动推导 */
-  mediaType?: NodeMediaType;
+
+  // ===== context 卡片专属 =====
+  /** 聚合了哪些 atom 卡片 */
+  sourceCardIds?: string[];
+  /** 排序后的上下文项 */
+  items?: ContextItem[];
+
+  // ===== execution 卡片专属 =====
+  /** 基于哪个 context 执行 */
+  contextCardId?: string;
+  /** 模型引用: "providerKey/modelName" */
+  modelRef?: string;
+  /** 输出类型 */
+  outputType?: 'text' | 'image' | 'audio';
+  /** 关联的结果卡片 ID */
+  resultCardId?: string;
+  /** 执行状态 */
+  status?: 'idle' | 'processing' | 'error' | 'success';
+
+  // ===== UI 状态 =====
+  isEditing?: boolean;
 }
 
-export type IdeaNode = Node<IdeaNodeData, 'ideaNode'>;
-
-export interface ActionNodeData extends Record<string, unknown> {
-  actionId: string;
-  actionName: string;
-  actionColor?: string;
-  actionSnapshot: ActionConfig;
-  sourceSlot?: string;
-  sourceProvider?: string;
-  sourceModel?: string;
-  status?: 'idle' | 'processing' | 'error';
-}
-
-export type ActionNode = Node<ActionNodeData, 'actionNode'>;
-
-export type AppNode = IdeaNode | ActionNode;
+export type CardNode = Node<CardNodeData, 'cardNode'>;
 
 export type ModelProtocol = 'openai' | 'openai-responses' | 'anthropic' | 'gemini' | 'generic';
 
 export type CallMode = 'chat' | 'generateImage' | 'editImage';
 
-export type ModelCapability = 'chat' | 'generateImage' | 'editImage';
-
 export interface AIModelConfig {
   id: string;
   protocol: ModelProtocol;
-  model: string; // 模型名称（同一供应商内唯一），也是 API model identifier
+  model: string;
   supportsText: boolean;
   supportsTextToImage: boolean;
   supportsImageToImage: boolean;
   /** 仅 openai-responses 协议下用于图像生成/编辑的模型（如 gpt-image-2） */
   imageModel?: string;
+  /** 支持看图说话（图生文） */
+  supportsVision: boolean;
+  /** 支持解析文件/文档 */
+  supportsDocument: boolean;
+  /** 上下文窗口大小（token） */
+  contextWindow: number;
 }
 
 export interface AIProviderConfig {
   id: string;
-  name: string; // 显示名称
-  key: string;  // 供应商标识（唯一），如 "openai"
+  name: string;
+  key: string;
   endpoint?: string;
   apiKey: string;
   models: AIModelConfig[];
-}
-
-/** 模型插槽 —— 每个 Action 中动态配置的「函数入参」，声明能力需求 */
-export interface ModelSlot {
-  /** action 内唯一的插槽标识，代码中通过此字段引用模型 */
-  identifier: string;
-  capability: ModelCapability;
-  boundModelId?: string;   // 可选：默认绑定的模型 "<providerKey>/<modelName>"
-}
-
-export interface TriggerConstraint {
-  /** 约束标识，用于在 payload 中引用匹配的节点 */
-  id: string;
-  /** 接受的节点媒体类型 */
-  mediaType: 'text' | 'image' | 'mixed' | 'any';
-  /** 最少需要几个符合此约束的节点 */
-  min: number;
-  /** 最多需要几个（null = 无上限） */
-  max: number | null;
-  /** 描述，用于 UI 提示 */
-  description?: string;
-}
-
-export interface SimpleTrigger {
-  mode: 'simple';
-  /** 最少选中节点数 */
-  minNodes: number;
-  /** 最多选中节点数（null = 无上限） */
-  maxNodes: number | null;
-}
-
-export interface ConstraintTrigger {
-  mode: 'constraint';
-  /** 约束组：精确声明输入要求 */
-  constraints: TriggerConstraint[];
-}
-
-export type ActionTrigger = SimpleTrigger | ConstraintTrigger;
-
-export type ProcessorInputType = 'text' | 'images';
-
-export interface ProcessorInput {
-  /** 参数标识，如 'images' */
-  id: string;
-  /** 数据类型 */
-  type: ProcessorInputType;
-  /** 源表达式（占位符语法），如 {{selected_nodes.images}} */
-  source: string;
-  /** 描述，用于 UI 提示 */
-  description?: string;
-}
-
-export interface ActionConfig {
-  id: string;
-  name: string;
-  icon?: string;
-  color?: string;
-  trigger: ActionTrigger;
-  processor: {
-    type: 'llm' | 'code';
-    payload: string;
-    /** 处理器输入声明 */
-    inputs?: ProcessorInput[];
-    /** 此 action 声明的模型插槽列表（函数入参） */
-    slots?: ModelSlot[];
-    /** LLM 模式下默认使用的插槽 identifier（指向 slots 中的某一项） */
-    slotRef?: string;
-    mode?: CallMode;
-  };
-  output: {
-    connectionType: 'source_to_new' | 'new_to_source' | 'none';
-  };
 }

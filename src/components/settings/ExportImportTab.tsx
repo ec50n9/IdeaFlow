@@ -18,23 +18,17 @@ import {
   readJsonFile,
   validateExportPayload,
   filterValidProviders,
-  filterValidActions,
   mergeProviders,
-  mergeActions,
   ExportPayload,
 } from '@/lib/configExport';
-import { cn } from '@/lib/utils';
 import { Download, Upload, FileJson, AlertCircle, CheckCircle2 } from 'lucide-react';
 
 export function ExportImportTab() {
-  const { providers, actions, setProviders, setActions } = useStore();
+  const { providers, setProviders } = useStore();
 
   // ---- Export selection state ----
   const [selectedProviderIds, setSelectedProviderIds] = useState<Set<string>>(
     () => new Set(providers.map((p) => p.id))
-  );
-  const [selectedActionIds, setSelectedActionIds] = useState<Set<string>>(
-    () => new Set(actions.map((a) => a.id))
   );
 
   useEffect(() => {
@@ -45,18 +39,8 @@ export function ExportImportTab() {
     });
   }, [providers]);
 
-  useEffect(() => {
-    setSelectedActionIds((prev) => {
-      const next = new Set(prev);
-      actions.forEach((a) => next.add(a.id));
-      return next;
-    });
-  }, [actions]);
-
   const allProvidersSelected = providers.length > 0 && providers.every((p) => selectedProviderIds.has(p.id));
   const someProvidersSelected = providers.some((p) => selectedProviderIds.has(p.id)) && !allProvidersSelected;
-  const allActionsSelected = actions.length > 0 && actions.every((a) => selectedActionIds.has(a.id));
-  const someActionsSelected = actions.some((a) => selectedActionIds.has(a.id)) && !allActionsSelected;
 
   const toggleAllProviders = () => {
     if (allProvidersSelected) {
@@ -75,29 +59,11 @@ export function ExportImportTab() {
     });
   };
 
-  const toggleAllActions = () => {
-    if (allActionsSelected) {
-      setSelectedActionIds(new Set());
-    } else {
-      setSelectedActionIds(new Set(actions.map((a) => a.id)));
-    }
-  };
-
-  const toggleAction = (id: string) => {
-    setSelectedActionIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
   const handleExport = () => {
     try {
       const exportedProviders = providers.filter((p) => selectedProviderIds.has(p.id));
-      const exportedActions = actions.filter((a) => selectedActionIds.has(a.id));
-      if (exportedProviders.length === 0 && exportedActions.length === 0) return;
-      const payload = buildExportPayload(exportedProviders, exportedActions);
+      if (exportedProviders.length === 0) return;
+      const payload = buildExportPayload(exportedProviders);
       const date = new Date().toISOString().slice(0, 10);
       downloadJson(`ideaflow-config-${date}.json`, payload);
     } catch (err) {
@@ -105,13 +71,12 @@ export function ExportImportTab() {
     }
   };
 
-  const hasExportSelection = selectedProviderIds.size > 0 || selectedActionIds.size > 0;
+  const hasExportSelection = selectedProviderIds.size > 0;
 
   // ---- Import state ----
   const [importPayload, setImportPayload] = useState<ExportPayload | null>(null);
   const [importPreviewOpen, setImportPreviewOpen] = useState(false);
   const [previewSelectedProviderIds, setPreviewSelectedProviderIds] = useState<Set<string>>(new Set());
-  const [previewSelectedActionIds, setPreviewSelectedActionIds] = useState<Set<string>>(new Set());
   const [importStrategy, setImportStrategy] = useState<'merge' | 'replace'>('merge');
   const [importError, setImportError] = useState<string | null>(null);
   const [importSuccess, setImportSuccess] = useState(false);
@@ -126,7 +91,6 @@ export function ExportImportTab() {
     setImportPayload(null);
     setImportPreviewOpen(false);
     setPreviewSelectedProviderIds(new Set());
-    setPreviewSelectedActionIds(new Set());
 
     try {
       const data = await readJsonFile<unknown>(file);
@@ -136,9 +100,8 @@ export function ExportImportTab() {
       }
 
       const validProviders = data.providers ? filterValidProviders(data.providers) : [];
-      const validActions = data.actions ? filterValidActions(data.actions) : [];
 
-      if (validProviders.length === 0 && validActions.length === 0) {
+      if (validProviders.length === 0) {
         setImportError('配置文件中未包含有效的可导入数据');
         return;
       }
@@ -146,12 +109,10 @@ export function ExportImportTab() {
       const payload: ExportPayload = {
         exportMeta: data.exportMeta,
         ...(validProviders.length > 0 ? { providers: validProviders } : {}),
-        ...(validActions.length > 0 ? { actions: validActions } : {}),
       };
 
       setImportPayload(payload);
       setPreviewSelectedProviderIds(new Set(validProviders.map((p) => p.id)));
-      setPreviewSelectedActionIds(new Set(validActions.map((a) => a.id)));
       setImportPreviewOpen(true);
     } catch (err) {
       setImportError(err instanceof Error ? err.message : '文件读取失败');
@@ -164,7 +125,6 @@ export function ExportImportTab() {
     setImportPreviewOpen(false);
     setImportPayload(null);
     setPreviewSelectedProviderIds(new Set());
-    setPreviewSelectedActionIds(new Set());
   };
 
   const handleImportConfirm = () => {
@@ -176,24 +136,16 @@ export function ExportImportTab() {
       const providersToImport = importPayload.providers?.filter((p) =>
         previewSelectedProviderIds.has(p.id)
       ) ?? [];
-      const actionsToImport = importPayload.actions?.filter((a) =>
-        previewSelectedActionIds.has(a.id)
-      ) ?? [];
 
       if (providersToImport.length > 0) {
         const merged = mergeProviders(providers, providersToImport, importStrategy);
         setProviders(merged);
-      }
-      if (actionsToImport.length > 0) {
-        const merged = mergeActions(actions, actionsToImport, importStrategy);
-        setActions(merged);
       }
 
       setImportSuccess(true);
       setImportPreviewOpen(false);
       setImportPayload(null);
       setPreviewSelectedProviderIds(new Set());
-      setPreviewSelectedActionIds(new Set());
     } catch (err) {
       setImportError(err instanceof Error ? err.message : '导入失败');
     }
@@ -201,19 +153,13 @@ export function ExportImportTab() {
 
   // ---- Import preview derived state ----
   const previewProviders = importPayload?.providers ?? [];
-  const previewActions = importPayload?.actions ?? [];
 
   const allPreviewProvidersSelected =
     previewProviders.length > 0 && previewProviders.every((p) => previewSelectedProviderIds.has(p.id));
   const somePreviewProvidersSelected =
     previewProviders.some((p) => previewSelectedProviderIds.has(p.id)) && !allPreviewProvidersSelected;
 
-  const allPreviewActionsSelected =
-    previewActions.length > 0 && previewActions.every((a) => previewSelectedActionIds.has(a.id));
-  const somePreviewActionsSelected =
-    previewActions.some((a) => previewSelectedActionIds.has(a.id)) && !allPreviewActionsSelected;
-
-  const hasPreviewSelection = previewSelectedProviderIds.size > 0 || previewSelectedActionIds.size > 0;
+  const hasPreviewSelection = previewSelectedProviderIds.size > 0;
 
   const toggleAllPreviewProviders = () => {
     if (allPreviewProvidersSelected) {
@@ -232,28 +178,11 @@ export function ExportImportTab() {
     });
   };
 
-  const toggleAllPreviewActions = () => {
-    if (allPreviewActionsSelected) {
-      setPreviewSelectedActionIds(new Set());
-    } else {
-      setPreviewSelectedActionIds(new Set(previewActions.map((a) => a.id)));
-    }
-  };
-
-  const togglePreviewAction = (id: string) => {
-    setPreviewSelectedActionIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
   return (
     <div className="flex flex-col gap-10">
       <div>
         <h2 className="text-2xl font-semibold tracking-tight">配置导出与导入</h2>
-        <p className="text-muted-foreground text-base mt-1">将您的模型配置和动作配置导出为 JSON 文件，或从文件中恢复配置。</p>
+        <p className="text-muted-foreground text-base mt-1">将您的模型配置导出为 JSON 文件，或从文件中恢复配置。</p>
       </div>
 
       {/* Export Section */}
@@ -304,43 +233,6 @@ export function ExportImportTab() {
             )}
             {providers.length === 0 && (
               <p className="ml-7 text-sm text-muted-foreground">暂无供应商配置</p>
-            )}
-          </div>
-
-          {/* Actions */}
-          <div className="flex flex-col gap-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <Checkbox
-                  id="export-actions-all"
-                  checked={allActionsSelected}
-                  indeterminate={someActionsSelected}
-                  onCheckedChange={toggleAllActions}
-                />
-                <Label htmlFor="export-actions-all" className="cursor-pointer font-medium">
-                  动作配置
-                  <span className="text-muted-foreground text-xs ml-2">{actions.length} 个动作</span>
-                </Label>
-              </div>
-            </div>
-            {actions.length > 0 && (
-              <div className="ml-7 flex flex-col gap-2 border-l pl-4">
-                {actions.map((a) => (
-                  <div key={a.id} className="flex items-center gap-3">
-                    <Checkbox
-                      id={`export-action-${a.id}`}
-                      checked={selectedActionIds.has(a.id)}
-                      onCheckedChange={() => toggleAction(a.id)}
-                    />
-                    <Label htmlFor={`export-action-${a.id}`} className="cursor-pointer text-sm">
-                      {a.name}
-                    </Label>
-                  </div>
-                ))}
-              </div>
-            )}
-            {actions.length === 0 && (
-              <p className="ml-7 text-sm text-muted-foreground">暂无动作配置</p>
             )}
           </div>
         </div>
@@ -441,38 +333,6 @@ export function ExportImportTab() {
                       <Label htmlFor={`preview-provider-${p.id}`} className="cursor-pointer text-sm">
                         {p.name}
                         <span className="text-muted-foreground text-xs ml-2">{p.models.length} 个模型</span>
-                      </Label>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Preview Actions */}
-            {previewActions.length > 0 && (
-              <div className="flex flex-col gap-3">
-                <div className="flex items-center gap-3">
-                  <Checkbox
-                    id="preview-actions-all"
-                    checked={allPreviewActionsSelected}
-                    indeterminate={somePreviewActionsSelected}
-                    onCheckedChange={toggleAllPreviewActions}
-                  />
-                  <Label htmlFor="preview-actions-all" className="cursor-pointer font-medium">
-                    动作配置
-                    <span className="text-muted-foreground text-xs ml-2">{previewActions.length} 个动作</span>
-                  </Label>
-                </div>
-                <div className="ml-7 flex flex-col gap-2 border-l pl-4">
-                  {previewActions.map((a) => (
-                    <div key={a.id} className="flex items-center gap-3">
-                      <Checkbox
-                        id={`preview-action-${a.id}`}
-                        checked={previewSelectedActionIds.has(a.id)}
-                        onCheckedChange={() => togglePreviewAction(a.id)}
-                      />
-                      <Label htmlFor={`preview-action-${a.id}`} className="cursor-pointer text-sm">
-                        {a.name}
                       </Label>
                     </div>
                   ))}

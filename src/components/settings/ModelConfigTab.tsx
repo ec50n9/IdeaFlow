@@ -29,11 +29,25 @@ function getCapabilityLabels(model: AIModelConfig): string[] {
   if (model.supportsText) labels.push('文生文');
   if (model.supportsTextToImage) labels.push('文生图');
   if (model.supportsImageToImage) labels.push('图生图');
+  if (model.supportsVision) labels.push('视觉');
+  if (model.supportsDocument) labels.push('文档');
   return labels;
 }
 
 function getDefaultProtocol(): ModelProtocol {
   return 'openai';
+}
+
+function normalizeProvider(provider: AIProviderConfig): AIProviderConfig {
+  return {
+    ...provider,
+    models: provider.models.map((model) => ({
+      ...model,
+      supportsVision: model.supportsVision ?? false,
+      supportsDocument: model.supportsDocument ?? false,
+      contextWindow: model.contextWindow ?? 128000,
+    })),
+  };
 }
 
 export function ModelConfigTab() {
@@ -57,6 +71,9 @@ export function ModelConfigTab() {
           supportsText: true,
           supportsTextToImage: false,
           supportsImageToImage: false,
+          supportsVision: false,
+          supportsDocument: false,
+          contextWindow: 128000,
         }
       ]
     };
@@ -101,7 +118,7 @@ export function ModelConfigTab() {
                   <div className="text-xs text-muted-foreground font-mono truncate">API接口: {provider.endpoint || '默认'}</div>
                </div>
                <div className="flex gap-2 shrink-0">
-                 <Button variant="secondary" size="sm" className="gap-1.5" onClick={() => setEditingProvider(provider)}>
+                 <Button variant="secondary" size="sm" className="gap-1.5" onClick={() => setEditingProvider(normalizeProvider(provider))}>
                    <Settings className="w-4 h-4" /> 配置
                  </Button>
                  <Button variant="outline" size="icon" className="h-9 w-9 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors" onClick={() => deleteProvider(provider.id)}>
@@ -197,6 +214,9 @@ export function ModelConfigTab() {
                                 supportsText: true,
                                 supportsTextToImage: false,
                                 supportsImageToImage: false,
+                                supportsVision: false,
+                                supportsDocument: false,
+                                contextWindow: 128000,
                               }
                            ]
                         });
@@ -291,6 +311,42 @@ export function ModelConfigTab() {
                              />
                              <span>图生图</span>
                            </label>
+                           <label className="flex items-center gap-2 text-sm cursor-pointer">
+                             <Checkbox
+                               checked={mod.supportsVision}
+                               onCheckedChange={(checked) => {
+                                 const newModels = [...editingProvider.models];
+                                 newModels[index].supportsVision = checked === true;
+                                 setEditingProvider({...editingProvider, models: newModels});
+                               }}
+                             />
+                             <span>视觉输入</span>
+                           </label>
+                           <label className="flex items-center gap-2 text-sm cursor-pointer">
+                             <Checkbox
+                               checked={mod.supportsDocument}
+                               onCheckedChange={(checked) => {
+                                 const newModels = [...editingProvider.models];
+                                 newModels[index].supportsDocument = checked === true;
+                                 setEditingProvider({...editingProvider, models: newModels});
+                               }}
+                             />
+                             <span>文档解析</span>
+                           </label>
+                         </div>
+
+                         <div className="grid gap-2">
+                           <Label className="text-xs text-muted-foreground">上下文窗口大小 (tokens)</Label>
+                           <Input
+                             type="number"
+                             value={mod.contextWindow}
+                             onChange={(e) => {
+                               const newModels = [...editingProvider.models];
+                               newModels[index].contextWindow = parseInt(e.target.value) || 0;
+                               setEditingProvider({...editingProvider, models: newModels});
+                             }}
+                             placeholder="128000"
+                           />
                          </div>
 
                          {mod.protocol === 'openai-responses' && (mod.supportsTextToImage || mod.supportsImageToImage) && (

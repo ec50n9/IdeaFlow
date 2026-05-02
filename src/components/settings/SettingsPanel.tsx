@@ -1,12 +1,11 @@
 import { useState, useCallback, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { X, Bot, Settings, FileJson } from 'lucide-react';
+import { X, Bot, FileJson } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ModelConfigTab } from './ModelConfigTab';
-import { ActionConfigTab } from './ActionConfigTab';
 import { ExportImportTab } from './ExportImportTab';
 
-type SettingsTab = 'models' | 'actions' | 'export-import';
+type SettingsTab = 'models' | 'export-import';
 
 interface SettingsPanelProps {
   open: boolean;
@@ -15,12 +14,11 @@ interface SettingsPanelProps {
 }
 
 const NAV_ITEMS: { id: SettingsTab; label: string; icon: React.ElementType }[] = [
-  { id: 'actions', label: '动作配置', icon: Settings },
   { id: 'models', label: '模型配置', icon: Bot },
   { id: 'export-import', label: '导出/导入', icon: FileJson },
 ];
 
-export function SettingsPanel({ open, onOpenChange, defaultTab = 'actions' }: SettingsPanelProps) {
+export function SettingsPanel({ open, onOpenChange, defaultTab = 'models' }: SettingsPanelProps) {
   const [activeTab, setActiveTab] = useState<SettingsTab>(defaultTab);
 
   useEffect(() => {
@@ -64,8 +62,6 @@ export function SettingsPanel({ open, onOpenChange, defaultTab = 'actions' }: Se
     switch (activeTab) {
       case 'models':
         return <ModelConfigTab />;
-      case 'actions':
-        return <ActionConfigTab />;
       case 'export-import':
         return <ExportImportTab />;
       default:
