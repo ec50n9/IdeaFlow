@@ -1,4 +1,4 @@
-import { CardNode, AIProviderConfig, AIModelConfig, ContextItem, AtomType } from '@/types';
+import { CardNode, AIProviderConfig, AIModelConfig, AtomType } from '@/types';
 
 export interface ModelFilterResult {
   provider: AIProviderConfig;
@@ -23,10 +23,10 @@ function evaluateModelAgainstContext(
   let disabled = false;
   let reason = '';
 
-  // 规则 A：包含图片但模型不支持 vision 且不支持图像编辑且不支持图像生成
-  if (context.hasImage && !model.vision && !model.imageEditing && !model.imageGeneration) {
+  // 规则 A：包含图片但模型不支持 vision
+  if (context.hasImage && !model.vision) {
     disabled = true;
-    reason = '不支持视觉/图像能力';
+    reason = '不支持视觉理解';
   }
 
   // 规则 B：包含文件但模型不支持文档解析
@@ -61,14 +61,14 @@ function buildResults(
 }
 
 /**
- * 根据上下文内容分析，过滤出可用模型
+ * 根据源卡片 ID 列表分析上下文，过滤出可用模型
  */
 export function getAvailableModels(
-  items: ContextItem[],
+  sourceCardIds: string[],
   allNodes: CardNode[],
   allProviders: AIProviderConfig[]
 ): ModelFilterResult[] {
-  const { hasImage, hasDocument, estimatedTokens } = analyzeContext(items, allNodes);
+  const { hasImage, hasDocument, estimatedTokens } = analyzeContext(sourceCardIds, allNodes);
   return buildResults(allProviders, { hasImage, hasDocument, estimatedTokens });
 }
 
@@ -88,20 +88,16 @@ export function getAvailableModelsFromAtomTypes(
 }
 
 /**
- * 分析上下文内容，返回特征信息
+ * 分析源卡片内容，返回特征信息
  */
-export function analyzeContext(items: ContextItem[], allNodes: CardNode[]) {
-  const atomCardIds = new Set(items.map((i) => i.sourceCardId));
+export function analyzeContext(sourceCardIds: string[], allNodes: CardNode[]) {
   let hasImage = false;
   let hasDocument = false;
   let estimatedTokens = 0;
 
-  for (const cardId of atomCardIds) {
+  for (const cardId of sourceCardIds) {
     const card = allNodes.find((n) => n.id === cardId);
     if (!card || card.data.cardType !== 'atom') continue;
-    // 检查 item 是否被禁用
-    const item = items.find((i) => i.sourceCardId === cardId);
-    if (item && item.enabled === false) continue;
 
     if (card.data.atomType === 'image') hasImage = true;
     if (card.data.atomType === 'file') hasDocument = true;

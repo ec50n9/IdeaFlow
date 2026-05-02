@@ -10,27 +10,76 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import {
   Send,
-  ArrowUp,
-  ArrowDown,
-  Trash2,
-  FileText,
-  Image as ImageIcon,
-  File,
+  Plus,
   User,
-  Cpu,
   BotMessageSquare,
-  Eye,
-  EyeOff,
   Loader2,
   AlertCircle,
-  Plus,
-  ChevronDown,
   Bot,
+  Image as ImageIcon,
+  FileText,
+  File,
 } from 'lucide-react';
-import { ContextItem, DialogMessage, CardNode } from '@/types';
-import { sendDialogMessage, extractContentAsAtom } from '@/lib/engine';
+import { CardNode, DialogMessage } from '@/types';
+import { sendDialogMessage, extractContentAsAtom } from '@/lib/chatEngine';
+import { resolveImageUrl } from '@/lib/fileUtils';
 import { ModelCapabilityTags } from '@/components/shared/ModelCapabilityTags';
 import Markdown from 'react-markdown';
+
+// ─────────────────────────────────────────────────────────────
+// Markdown 图片组件（支持点击提取）
+// ─────────────────────────────────────────────────────────────
+
+function ChatImage({ src, alt, onExtract }: { src?: string; alt?: string; onExtract?: (url: string) => void }) {
+  const [resolvedSrc, setResolvedSrc] = useState(src);
+  const [showOverlay, setShowOverlay] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (src && src.startsWith('idb://')) {
+      resolveImageUrl(src).then((url) => {
+        if (!cancelled) setResolvedSrc(url || '');
+      });
+    } else {
+      setResolvedSrc(src);
+    }
+    return () => { cancelled = true; };
+  }, [src]);
+
+  if (!resolvedSrc) {
+    return <span className="text-muted-foreground italic text-xs">[图片加载失败]</span>;
+  }
+
+  return (
+    <div
+      className="relative inline-block group"
+      onMouseEnter={() => setShowOverlay(true)}
+      onMouseLeave={() => setShowOverlay(false)}
+    >
+      <img
+        src={resolvedSrc}
+        alt={alt || ''}
+        className="rounded-md max-h-[300px] w-full object-contain cursor-pointer"
+        loading="lazy"
+        onClick={() => onExtract?.(resolvedSrc)}
+      />
+      {showOverlay && onExtract && (
+        <div className="absolute inset-0 bg-black/40 rounded-md flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onExtract(resolvedSrc);
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-background text-foreground text-xs rounded-full shadow-lg hover:bg-primary hover:text-primary-foreground transition-colors"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            提取为图片卡片
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ─────────────────────────────────────────────────────────────
 // 类型图标
@@ -45,14 +94,50 @@ function AtomTypeIcon({ atomType, className }: { atomType?: string; className?: 
 }
 
 // ─────────────────────────────────────────────────────────────
-// 角色配置
+// 划选浮动工具条
 // ─────────────────────────────────────────────────────────────
 
-const ROLE_OPTIONS: { value: 'system' | 'user' | 'assistant'; label: string; icon: React.ElementType; color: string }[] = [
-  { value: 'system', label: 'System', icon: Cpu, color: 'text-amber-600 bg-amber-50 border-amber-200 dark:bg-amber-900 dark:text-amber-300 dark:border-amber-800' },
-  { value: 'user', label: 'User', icon: User, color: 'text-blue-600 bg-blue-50 border-blue-200 dark:bg-blue-900 dark:text-blue-300 dark:border-blue-800' },
-  { value: 'assistant', label: 'Assistant', icon: BotMessageSquare, color: 'text-emerald-600 bg-emerald-50 border-emerald-200 dark:bg-emerald-900 dark:text-emerald-300 dark:border-emerald-800' },
-];
+function SelectionToolbar({
+  rect,
+  onExtract,
+  onClose,
+}: {
+  rect: DOMRect;
+  onExtract: () => void;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const handleClickOutside = () => onClose();
+    setTimeout(() => document.addEventListener('click', handleClickOutside), 0);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed z-[100] bg-background border shadow-lg rounded-lg px-2 py-1.5 flex items-center gap-1"
+      style={{
+        left: rect.left + rect.width / 2,
+        top: rect.top - 40,
+        transform: 'translateX(-50%)',
+      }}
+    >
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onExtract();
+        }}
+        className="flex items-center gap-1 text-xs px-2 py-1 rounded hover:bg-muted transition-colors"
+      >
+        <Plus className="w-3.5 h-3.5" />
+        提取为文本卡片
+      </button>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// 主组件
+// ─────────────────────────────────────────────────────────────
 
 interface DialogChatProps {
   open: boolean;
@@ -62,27 +147,17 @@ interface DialogChatProps {
 
 export function DialogChat({ open, onOpenChange, dialogCardId }: DialogChatProps) {
   const nodes = useStore((state) => state.nodes);
-  const edges = useStore((state) => state.edges);
-  const updateNodeData = useStore((state) => state.updateNodeData);
-  const addNode = useStore((state) => state.addNode);
-  const setEdges = useStore((state) => state.setEdges);
   const providers = useStore((state) => state.providers);
 
   const dialogCard = nodes.find((n) => n.id === dialogCardId && n.data.cardType === 'dialog');
 
-  const [items, setItems] = useState<ContextItem[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
-  const [showOrchestrator, setShowOrchestrator] = useState(true);
+  const [selection, setSelection] = useState<{ text: string; rect: DOMRect } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-
-  useEffect(() => {
-    if (open && dialogCard) {
-      setItems(dialogCard.data.items || []);
-    }
-  }, [open, dialogCard]);
+  const messagesRef = useRef<HTMLDivElement>(null);
 
   // 自动滚动到底部
   useEffect(() => {
@@ -91,84 +166,53 @@ export function DialogChat({ open, onOpenChange, dialogCardId }: DialogChatProps
     }
   }, [dialogCard?.data.messages]);
 
-  // 获取源卡片
+  // 监听文本划选
+  useEffect(() => {
+    const handleSelectionChange = () => {
+      const sel = window.getSelection();
+      if (!sel || sel.rangeCount === 0) {
+        setSelection(null);
+        return;
+      }
+      const text = sel.toString().trim();
+      if (!text || text.length < 2) {
+        setSelection(null);
+        return;
+      }
+      // 确保选区在消息列表内
+      const range = sel.getRangeAt(0);
+      const container = messagesRef.current;
+      if (!container || !container.contains(range.commonAncestorContainer)) {
+        setSelection(null);
+        return;
+      }
+      const rect = range.getBoundingClientRect();
+      setSelection({ text, rect });
+    };
+
+    document.addEventListener('selectionchange', handleSelectionChange);
+    return () => document.removeEventListener('selectionchange', handleSelectionChange);
+  }, []);
+
   const sourceCards = useMemo(() => {
-    const map = new Map();
-    for (const item of items) {
-      const card = nodes.find((n) => n.id === item.sourceCardId && n.data.cardType === 'atom');
-      if (card) map.set(item.sourceCardId, card);
+    const sourceCardIds = dialogCard?.data.sourceCardIds || [];
+    const map = new Map<string, CardNode>();
+    for (const id of sourceCardIds) {
+      const card = nodes.find((n) => n.id === id && n.data.cardType === 'atom');
+      if (card) map.set(id, card);
     }
     return map;
-  }, [items, nodes]);
-
-  // 编排操作
-  const handleSaveItems = (itemsToSave: ContextItem[]) => {
-    updateNodeData(dialogCardId, { items: itemsToSave });
-  };
-
-  const handleMoveUp = (index: number) => {
-    if (index <= 0) return;
-    const newItems = [...items];
-    [newItems[index - 1], newItems[index]] = [newItems[index], newItems[index - 1]];
-    setItems(newItems);
-    handleSaveItems(newItems);
-  };
-
-  const handleMoveDown = (index: number) => {
-    if (index >= items.length - 1) return;
-    const newItems = [...items];
-    [newItems[index], newItems[index + 1]] = [newItems[index + 1], newItems[index]];
-    setItems(newItems);
-    handleSaveItems(newItems);
-  };
-
-  const handleToggleEnabled = (index: number) => {
-    const newItems = [...items];
-    newItems[index] = { ...newItems[index], enabled: newItems[index].enabled !== false ? false : true };
-    setItems(newItems);
-    handleSaveItems(newItems);
-  };
-
-  const handleRoleChange = (index: number, role: 'system' | 'user' | 'assistant') => {
-    const newItems = [...items];
-    newItems[index] = { ...newItems[index], role };
-    setItems(newItems);
-    handleSaveItems(newItems);
-  };
-
-  const handleRemoveItem = (index: number) => {
-    const itemToRemove = items[index];
-    if (!itemToRemove) return;
-
-    // 本地即时更新
-    const newItems = items.filter((_, i) => i !== index);
-    setItems(newItems);
-
-    // 删除对应的 edge，由 syncDialogItems 自动同步 dialog 的 items
-    const newEdges = edges.filter(
-      (e) =>
-        !(
-          e.source === itemToRemove.sourceCardId &&
-          e.target === dialogCardId &&
-          e.sourceHandle === 'bottom-source' &&
-          e.targetHandle === 'top-target'
-        )
-    );
-    setEdges(newEdges);
-  };
+  }, [dialogCard?.data.sourceCardIds, nodes]);
 
   // 发送消息
   const handleSend = useCallback(async () => {
     const modelRef = dialogCard?.data.modelRef;
     if (!inputValue.trim() || !modelRef || !dialogCard) return;
 
-    // 先保存 items（确保上下文最新）
-    handleSaveItems(items);
-
     setSendError(null);
     setIsSending(true);
     try {
-      await sendDialogMessage(dialogCardId, inputValue.trim(), modelRef, dialogCard.data.outputType || 'text');
+      await sendDialogMessage(dialogCardId, inputValue.trim(), modelRef);
       setInputValue('');
     } catch (e) {
       const msg = e instanceof Error ? e.message : '发送失败，请重试';
@@ -176,7 +220,7 @@ export function DialogChat({ open, onOpenChange, dialogCardId }: DialogChatProps
     } finally {
       setIsSending(false);
     }
-  }, [inputValue, dialogCard, dialogCardId, items]);
+  }, [inputValue, dialogCard, dialogCardId]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -191,8 +235,8 @@ export function DialogChat({ open, onOpenChange, dialogCardId }: DialogChatProps
     e.target.style.height = `${e.target.scrollHeight}px`;
   };
 
-  // 提取为卡片
-  const handleExtract = (content: string) => {
+  // 提取整消息
+  const handleExtractMessage = (content: string) => {
     try {
       extractContentAsAtom(dialogCardId, content, 'text');
     } catch (e) {
@@ -200,24 +244,32 @@ export function DialogChat({ open, onOpenChange, dialogCardId }: DialogChatProps
     }
   };
 
-  // 文本划选提取
-  const handleTextSelection = (messageId: string) => {
-    const selection = window.getSelection()?.toString().trim();
-    if (selection && selection.length > 0) {
-      // 划选提取通过悬浮按钮处理，这里不直接处理
+  // 提取选中文本
+  const handleExtractSelection = () => {
+    if (!selection) return;
+    try {
+      extractContentAsAtom(dialogCardId, selection.text, 'text');
+      window.getSelection()?.removeAllRanges();
+      setSelection(null);
+    } catch (e) {
+      console.error('提取失败:', e);
     }
   };
 
-  // 添加外部原子卡片到对话
-  const handleAddAtom = () => {
-    // 简化版：弹出一个选择器让用户选择画布上的 atom 卡片
-    // 这里先做一个简单版本：提示用户手动连线
+  // 提取图片
+  const handleExtractImage = (imageUrl: string) => {
+    try {
+      extractContentAsAtom(dialogCardId, imageUrl, 'image');
+    } catch (e) {
+      console.error('提取失败:', e);
+    }
   };
 
   if (!dialogCard) return null;
 
   const messages = dialogCard.data.messages || [];
   const status = dialogCard.data.status || 'idle';
+  const sourceCardIds = dialogCard.data.sourceCardIds || [];
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -235,118 +287,53 @@ export function DialogChat({ open, onOpenChange, dialogCardId }: DialogChatProps
             )}
           </DialogTitle>
           <div className="flex items-center gap-2">
-            {/* 模型展示（已锁定不可更改） */}
             <div className="text-xs border rounded-lg px-2 py-1 bg-muted/50 text-muted-foreground truncate max-w-[200px]">
               {dialogCard.data.modelRef || '未选择模型'}
             </div>
-            {/* 模型能力标签 */}
             <ModelCapabilityTags modelRef={dialogCard.data.modelRef} providers={providers} />
           </div>
         </DialogHeader>
 
-        {/* 编排区 */}
-        {showOrchestrator && items.length > 0 && (
-          <div className="shrink-0 border-b bg-muted/30">
-            <div className="px-4 py-2 flex items-center justify-between">
-              <span className="text-xs font-medium text-muted-foreground">上下文编排 ({items.length})</span>
-              <button
-                onClick={() => setShowOrchestrator(false)}
-                className="text-xs text-muted-foreground hover:text-foreground"
-              >
-                收起
-              </button>
-            </div>
-            <div className="px-4 pb-3 space-y-1.5 max-h-[180px] overflow-y-auto">
-              {items.map((item, index) => {
-                const card = sourceCards.get(item.sourceCardId);
-                const roleConfig = ROLE_OPTIONS.find((r) => r.value === item.role) || ROLE_OPTIONS[1];
-                const RoleIcon = roleConfig.icon;
-                const isEnabled = item.enabled !== false;
-
-                return (
-                  <div
-                    key={item.id}
-                    className={cn(
-                      "flex items-center gap-2 p-2 rounded-lg border bg-card transition-all",
-                      !isEnabled && "opacity-40"
-                    )}
-                  >
-                    {/* 可见性 */}
-                    <button
-                      onClick={() => handleToggleEnabled(index)}
-                      className="p-1 rounded hover:bg-muted transition-colors"
-                      title={isEnabled ? '禁用' : '启用'}
-                    >
-                      {isEnabled ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
-                    </button>
-
-                    {/* 排序 */}
-                    <div className="flex flex-col gap-0.5">
-                      <button onClick={() => handleMoveUp(index)} disabled={index === 0} className="p-0.5 rounded hover:bg-muted disabled:opacity-30">
-                        <ArrowUp className="w-3 h-3" />
-                      </button>
-                      <button onClick={() => handleMoveDown(index)} disabled={index === items.length - 1} className="p-0.5 rounded hover:bg-muted disabled:opacity-30">
-                        <ArrowDown className="w-3 h-3" />
-                      </button>
-                    </div>
-
-                    {/* 内容摘要 */}
-                    <div className="flex-1 min-w-0 flex items-center gap-2">
-                      <AtomTypeIcon atomType={card?.data.atomType} className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                      <span className="text-xs truncate">
-                        {card?.data.content?.slice(0, 60) || '[空内容]'}
-                      </span>
-                    </div>
-
-                    {/* Role */}
-                    <div className="flex gap-1">
-                      {ROLE_OPTIONS.map((role) => {
-                        const Icon = role.icon;
-                        return (
-                          <button
-                            key={role.value}
-                            onClick={() => handleRoleChange(index, role.value)}
-                            className={cn(
-                              'flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full border transition-all',
-                              item.role === role.value
-                                ? role.color
-                                : 'border-transparent text-muted-foreground hover:bg-muted'
-                            )}
-                          >
-                            <Icon className="w-2.5 h-2.5" />
-                            {role.label}
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    {/* 删除 */}
-                    <button
-                      onClick={() => handleRemoveItem(index)}
-                      className="p-1 rounded text-muted-foreground hover:text-red-500 hover:bg-red-50 transition-colors"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {!showOrchestrator && items.length > 0 && (
-          <button
-            onClick={() => setShowOrchestrator(true)}
-            className="shrink-0 px-4 py-1.5 text-xs text-muted-foreground hover:text-foreground border-b bg-muted/30 flex items-center gap-1"
-          >
-            <ChevronDown className="w-3 h-3" />
-            展开上下文编排 ({items.length})
-          </button>
-        )}
-
         {/* 消息列表 */}
-        <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4">
-          {messages.length === 0 && (
+        <div ref={messagesRef} className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4 relative">
+          {/* 原子卡片虚拟消息 */}
+          {sourceCardIds.map((cardId) => {
+            const card = sourceCards.get(cardId);
+            if (!card) return null;
+            const isImage = card.data.atomType === 'image';
+            const isFile = card.data.atomType === 'file';
+
+            return (
+              <div key={`atom-${cardId}`} className="flex gap-3 justify-end opacity-70">
+                <div className="max-w-[80%] rounded-2xl px-4 py-2.5 text-sm bg-blue-50 text-blue-900 dark:bg-blue-900/30 dark:text-blue-100 rounded-br-md border border-blue-100 dark:border-blue-800">
+                  <div className="flex items-center gap-1.5 text-[10px] text-blue-600 dark:text-blue-300 mb-1.5">
+                    <AtomTypeIcon atomType={card.data.atomType} className="w-3 h-3" />
+                    <span>来自卡片</span>
+                  </div>
+                  {isImage && card.data.content ? (
+                    <ChatImage
+                      src={card.data.content}
+                      alt="图片"
+                      onExtract={handleExtractImage}
+                    />
+                  ) : isFile ? (
+                    <div className="flex items-center gap-2 p-2 bg-background/50 rounded-lg">
+                      <File className="w-4 h-4 text-muted-foreground" />
+                      <span className="text-xs whitespace-pre-wrap">{card.data.content}</span>
+                    </div>
+                  ) : (
+                    <span className="whitespace-pre-wrap text-sm">{card.data.content}</span>
+                  )}
+                </div>
+                <div className="w-7 h-7 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center shrink-0 mt-1">
+                  <User className="w-4 h-4 text-blue-600 dark:text-blue-300" />
+                </div>
+              </div>
+            );
+          })}
+
+          {/* 空状态 */}
+          {messages.length === 0 && sourceCardIds.length === 0 && (
             <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-2">
               <Bot className="w-10 h-10 opacity-30" />
               <p className="text-sm">开始对话</p>
@@ -354,6 +341,7 @@ export function DialogChat({ open, onOpenChange, dialogCardId }: DialogChatProps
             </div>
           )}
 
+          {/* 对话消息 */}
           {messages.map((msg) => {
             const isUser = msg.role === 'user';
             const isAssistant = msg.role === 'assistant';
@@ -388,9 +376,15 @@ export function DialogChat({ open, onOpenChange, dialogCardId }: DialogChatProps
                   ) : (
                     <div className={cn("prose prose-sm max-w-none", isUser && "dark:prose-invert")}>
                       {isAssistant ? (
-                        <div onMouseUp={() => handleTextSelection(msg.id)}>
-                          <Markdown>{msg.content}</Markdown>
-                        </div>
+                        <Markdown
+                          components={{
+                            img: ({ src, alt }) => (
+                              <ChatImage src={src} alt={alt} onExtract={handleExtractImage} />
+                            ) as any,
+                          }}
+                        >
+                          {msg.content}
+                        </Markdown>
                       ) : (
                         <span className="whitespace-pre-wrap">{msg.content}</span>
                       )}
@@ -401,7 +395,7 @@ export function DialogChat({ open, onOpenChange, dialogCardId }: DialogChatProps
                   {isAssistant && msg.content && (
                     <div className="mt-2 pt-2 border-t border-border/50 flex gap-1.5">
                       <button
-                        onClick={() => handleExtract(msg.content)}
+                        onClick={() => handleExtractMessage(msg.content)}
                         className="text-[10px] flex items-center gap-1 px-2 py-0.5 rounded-full bg-background/80 hover:bg-background transition-colors text-muted-foreground hover:text-foreground"
                       >
                         <Plus className="w-3 h-3" />
@@ -420,6 +414,15 @@ export function DialogChat({ open, onOpenChange, dialogCardId }: DialogChatProps
             );
           })}
           <div ref={messagesEndRef} />
+
+          {/* 划选浮动工具条 */}
+          {selection && (
+            <SelectionToolbar
+              rect={selection.rect}
+              onExtract={handleExtractSelection}
+              onClose={() => setSelection(null)}
+            />
+          )}
         </div>
 
         {/* 输入区 */}

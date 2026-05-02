@@ -4,14 +4,6 @@ export type CardType = 'atom' | 'dialog';
 
 export type AtomType = 'text' | 'image' | 'file';
 
-export interface ContextItem {
-  id: string;
-  sourceCardId: string;
-  role: 'system' | 'user' | 'assistant';
-  /** 是否启用（参与本次对话） */
-  enabled?: boolean;
-}
-
 export interface DialogMessage {
   id: string;
   role: 'user' | 'assistant' | 'system';
@@ -33,14 +25,10 @@ export interface CardNodeData extends Record<string, unknown> {
   // ===== dialog 卡片专属 =====
   /** 连入的原子卡片 ID */
   sourceCardIds?: string[];
-  /** 编排后的上下文项 */
-  items?: ContextItem[];
   /** 对话历史消息 */
   messages?: DialogMessage[];
   /** 当前使用的模型引用: "providerKey/modelName" */
   modelRef?: string;
-  /** 当前输出类型 */
-  outputType?: 'text' | 'image';
 
   // ===== 通用状态 =====
   status?: 'idle' | 'processing' | 'error' | 'success';
@@ -53,7 +41,7 @@ export type CardNode = Node<CardNodeData, 'cardNode'>;
 
 export type ModelProtocol = 'openai' | 'openai-responses' | 'anthropic' | 'gemini' | 'generic';
 
-export type CallMode = 'chat' | 'generateImage' | 'editImage';
+
 
 export interface AIModelConfig {
   id: string;

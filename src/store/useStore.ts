@@ -13,20 +13,18 @@ import {
   applyNodeChanges,
   applyEdgeChanges,
 } from '@xyflow/react';
-import { CardNode, CardNodeData, AIProviderConfig, DialogMessage, ContextItem } from '@/types';
+import { CardNode, CardNodeData, AIProviderConfig, DialogMessage } from '@/types';
 import { v4 as uuidv4 } from 'uuid';
 import { canConnectAtomToDialog } from '@/lib/connectionRules';
 
 /**
- * 根据 edges 动态同步所有 dialog 卡片的 sourceCardIds 和 items。
+ * 根据 edges 动态同步所有 dialog 卡片的 sourceCardIds。
  * 连线存在 = 引用存在；连线删除 = 引用解除。
- * 保留现有 item 的 role / enabled 等用户自定义设置。
  */
 function syncDialogItems(nodes: CardNode[], edges: Edge[]): CardNode[] {
   return nodes.map((node) => {
     if (node.data.cardType !== 'dialog') return node;
 
-    // 找到所有连入该 dialog 的原子卡片（bottom-source → top-target）
     const connectedAtomIds = edges
       .filter(
         (e) =>
@@ -36,32 +34,11 @@ function syncDialogItems(nodes: CardNode[], edges: Edge[]): CardNode[] {
       )
       .map((e) => e.source);
 
-    const existingItems = node.data.items || [];
-
-    // 保留仍然连线的 item（保留用户的 role / enabled / 排序设置）
-    const preservedItems = existingItems.filter((item) =>
-      connectedAtomIds.includes(item.sourceCardId)
-    );
-
-    // 为新增的连线创建默认 item
-    const preservedIds = new Set(preservedItems.map((i) => i.sourceCardId));
-    const newItems: ContextItem[] = connectedAtomIds
-      .filter((id) => !preservedIds.has(id))
-      .map((sourceCardId) => ({
-        id: uuidv4(),
-        sourceCardId,
-        role: 'user' as const,
-        enabled: true,
-      }));
-
-    const items = [...preservedItems, ...newItems];
-
     return {
       ...node,
       data: {
         ...node.data,
         sourceCardIds: connectedAtomIds,
-        items,
       },
     } as CardNode;
   });
@@ -107,6 +84,11 @@ interface AppState {
   /** 当前打开的对话弹窗 */
   activeDialogId: string | null;
   openDialog: (id: string | null) => void;
+
+  /** 当前打开的图像生成弹窗 */
+  activeImageGenAtomIds: string[] | null;
+  openImageGen: (atomNodeIds: string[]) => void;
+  closeImageGen: () => void;
 }
 
 export const useStore = create<AppState>()(
@@ -278,18 +260,6 @@ export const useStore = create<AppState>()(
         const { atomNodeIds, position } = pendingDialogCreation;
         const dialogId = uuidv4();
 
-        const items: ContextItem[] = atomNodeIds.map((sourceCardId) => ({
-          id: uuidv4(),
-          sourceCardId,
-          role: 'user' as const,
-          enabled: true,
-        }));
-
-        // 如果有多于一个卡片，第一个设为 system（保持原有行为）
-        if (items.length > 1) {
-          items[0].role = 'system';
-        }
-
         const dialogNode: CardNode = {
           id: dialogId,
           type: 'cardNode',
@@ -297,9 +267,7 @@ export const useStore = create<AppState>()(
           data: {
             cardType: 'dialog',
             sourceCardIds: atomNodeIds,
-            items,
             messages: [],
-            outputType: 'text',
             modelRef,
             status: 'idle',
           },
@@ -335,174 +303,22 @@ export const useStore = create<AppState>()(
       openDialog: (id: string | null) => {
         set({ activeDialogId: id });
       },
+
+      activeImageGenAtomIds: null,
+      openImageGen: (atomNodeIds: string[]) => {
+        set({ activeImageGenAtomIds: atomNodeIds });
+      },
+      closeImageGen: () => {
+        set({ activeImageGenAtomIds: null });
+      },
     }),
     {
       name: 'mindflow-storage',
-      version: 6,
+      version: 1,
       migrate: (persistedState: any, version) => {
+        // 系统未上线，不做向后兼容迁移。版本不匹配时 Zustand 会自动重置。
         try {
           const state = persistedState as any;
-
-          // v2 -> v3: 移除 Action 概念，重构卡片概念
-          if (version < 3) {
-            const oldNodes = Array.isArray(state.nodes) ? state.nodes : [];
-            const oldEdges = Array.isArray(state.edges) ? state.edges : [];
-
-            const actionNodeIds = new Set<string>();
-            const newNodes: CardNode[] = [];
-
-            for (const node of oldNodes) {
-              if (!node || typeof node.id !== 'string' || !node.data || typeof node.data !== 'object') {
-                continue;
-              }
-
-              if (node.type === 'actionNode') {
-                actionNodeIds.add(node.id);
-                continue;
-              }
-
-              if (node.type === 'ideaNode') {
-                const oldData = node.data;
-                let atomType: 'text' | 'image' | 'file' = 'text';
-                const mediaType = oldData.mediaType;
-                if (mediaType === 'image') atomType = 'image';
-                else if (mediaType === 'file') atomType = 'file';
-
-                const newData: CardNodeData = {
-                  cardType: 'atom',
-                  atomType,
-                  content: typeof oldData.content === 'string' ? oldData.content : '',
-                  status: oldData.status || 'idle',
-                  sourceType: oldData.sourceType || 'manual',
-                  isEditing: oldData.isEditing,
-                };
-
-                if (oldData.sourceType === 'ai') {
-                  newData.sourceType = 'ai';
-                }
-
-                newNodes.push({
-                  id: node.id,
-                  type: 'cardNode',
-                  position: node.position || { x: 0, y: 0 },
-                  data: newData,
-                  selected: node.selected,
-                } as CardNode);
-              } else {
-                newNodes.push({
-                  id: node.id,
-                  type: 'cardNode',
-                  position: node.position || { x: 0, y: 0 },
-                  data: {
-                    cardType: 'atom',
-                    atomType: 'text',
-                    content: '',
-                    status: 'idle',
-                    sourceType: 'manual',
-                  },
-                } as CardNode);
-              }
-            }
-
-            const newEdges = oldEdges.filter((edge: any) => {
-              if (!edge || typeof edge.id !== 'string') return false;
-              if (actionNodeIds.has(edge.source)) return false;
-              if (actionNodeIds.has(edge.target)) return false;
-              return true;
-            });
-
-            state.nodes = newNodes;
-            state.edges = newEdges;
-            delete state.actions;
-          }
-
-          // v5 -> v6: 模型能力字段统一重构
-          //   supportsText → chat
-          //   supportsTextToImage → imageGeneration
-          //   supportsImageToImage → imageEditing
-          //   supportsVision → vision
-          //   supportsDocument → documentParsing
-          if (version < 6) {
-            if (Array.isArray(state.providers)) {
-              for (const prov of state.providers) {
-                for (const model of prov.models || []) {
-                  model.chat = typeof model.supportsText === 'boolean' ? model.supportsText : true;
-                  model.imageGeneration = typeof model.supportsTextToImage === 'boolean' ? model.supportsTextToImage : false;
-                  model.imageEditing = typeof model.supportsImageToImage === 'boolean' ? model.supportsImageToImage : false;
-                  model.vision = typeof model.supportsVision === 'boolean' ? model.supportsVision : false;
-                  model.documentParsing = typeof model.supportsDocument === 'boolean' ? model.supportsDocument : false;
-                  delete model.supportsText;
-                  delete model.supportsTextToImage;
-                  delete model.supportsImageToImage;
-                  delete model.supportsVision;
-                  delete model.supportsDocument;
-                }
-              }
-            }
-          }
-
-          // v4 -> v5: dialog 模型选择语义硬化（无数据结构变更）
-          if (version < 5) {
-            // 无需迁移，字段已兼容
-          }
-
-          // v3 -> v4: context + execution → dialog
-          if (version < 4) {
-            const oldNodes = Array.isArray(state.nodes) ? state.nodes : [];
-            const oldEdges = Array.isArray(state.edges) ? state.edges : [];
-
-            const executionNodeIds = new Set<string>();
-            const newNodes: CardNode[] = [];
-
-            for (const node of oldNodes) {
-              if (!node || typeof node.id !== 'string' || !node.data || typeof node.data !== 'object') {
-                continue;
-              }
-
-              if (node.data.cardType === 'execution') {
-                // execution 卡片删除
-                executionNodeIds.add(node.id);
-                continue;
-              }
-
-              if (node.data.cardType === 'context') {
-                // context → dialog
-                const oldData = node.data;
-                newNodes.push({
-                  id: node.id,
-                  type: 'cardNode',
-                  position: node.position || { x: 0, y: 0 },
-                  data: {
-                    cardType: 'dialog',
-                    sourceCardIds: oldData.sourceCardIds || [],
-                    items: (oldData.items || []).map((item: any) => ({
-                      ...item,
-                      enabled: true,
-                    })),
-                    messages: [],
-                    modelRef: oldData.modelRef,
-                    outputType: oldData.outputType || 'text',
-                    status: 'idle',
-                  },
-                  selected: node.selected,
-                } as CardNode);
-              } else {
-                // atom 和其他保留
-                newNodes.push(node as CardNode);
-              }
-            }
-
-            // 过滤边：删除与 execution 相关的边
-            const newEdges = oldEdges.filter((edge: any) => {
-              if (!edge || typeof edge.id !== 'string') return false;
-              if (executionNodeIds.has(edge.source)) return false;
-              if (executionNodeIds.has(edge.target)) return false;
-              return true;
-            });
-
-            state.nodes = newNodes;
-            state.edges = newEdges;
-          }
 
           // 通用数据净化
           if (Array.isArray(state.nodes)) {
@@ -535,24 +351,12 @@ export const useStore = create<AppState>()(
             );
             for (const prov of state.providers) {
               for (const model of prov.models || []) {
-                if (typeof model.chat !== 'boolean') {
-                  model.chat = true;
-                }
-                if (typeof model.vision !== 'boolean') {
-                  model.vision = false;
-                }
-                if (typeof model.imageGeneration !== 'boolean') {
-                  model.imageGeneration = false;
-                }
-                if (typeof model.imageEditing !== 'boolean') {
-                  model.imageEditing = false;
-                }
-                if (typeof model.documentParsing !== 'boolean') {
-                  model.documentParsing = false;
-                }
-                if (typeof model.contextWindow !== 'number') {
-                  model.contextWindow = 128000;
-                }
+                if (typeof model.chat !== 'boolean') model.chat = true;
+                if (typeof model.vision !== 'boolean') model.vision = false;
+                if (typeof model.imageGeneration !== 'boolean') model.imageGeneration = false;
+                if (typeof model.imageEditing !== 'boolean') model.imageEditing = false;
+                if (typeof model.documentParsing !== 'boolean') model.documentParsing = false;
+                if (typeof model.contextWindow !== 'number') model.contextWindow = 128000;
               }
             }
           }
@@ -612,6 +416,7 @@ export const useStore = create<AppState>()(
         edges: state.edges,
         providers: state.providers,
         hasUserCreatedNode: state.hasUserCreatedNode,
+        activeImageGenAtomIds: state.activeImageGenAtomIds,
       }),
       onRehydrateStorage: () => {
         return (state, error) => {

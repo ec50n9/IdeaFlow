@@ -92,7 +92,10 @@ export function validateProvider(data: unknown): data is AIProviderConfig {
 function normalizeModel(model: AIModelConfig): AIModelConfig {
   return {
     ...model,
+    chat: model.chat ?? true,
     vision: model.vision ?? false,
+    imageGeneration: model.imageGeneration ?? false,
+    imageEditing: model.imageEditing ?? false,
     documentParsing: model.documentParsing ?? false,
     contextWindow: model.contextWindow ?? 128000,
   };

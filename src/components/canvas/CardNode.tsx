@@ -81,6 +81,7 @@ function areEqual(prev: NodeProps<CardNode>, next: NodeProps<CardNode>) {
   // dialog 专用比较
   if (prev.data.messages?.length !== next.data.messages?.length) return false;
   if (prev.data.sourceCardIds?.length !== next.data.sourceCardIds?.length) return false;
+  if (prev.data.modelRef !== next.data.modelRef) return false;
   return true;
 }
 
@@ -256,7 +257,7 @@ export const CardNodeComponent = memo(({ id, data, selected }: NodeProps<CardNod
   // ── 渲染 dialog 卡片 ──
 
   const renderDialogCard = () => {
-    const itemCount = data.sourceCardIds?.length || 0;
+    const sourceCount = data.sourceCardIds?.length || 0;
     const messageCount = data.messages?.length || 0;
     const lastMessage = data.messages?.[data.messages.length - 1];
     const status = data.status || 'idle';
@@ -284,7 +285,7 @@ export const CardNodeComponent = memo(({ id, data, selected }: NodeProps<CardNod
         </div>
 
         <div className="mt-1.5 text-[11px] text-muted-foreground space-y-0.5">
-          <div>连入 {itemCount} 个卡片 · {Math.floor(messageCount / 2)} 轮对话</div>
+          <div>连入 {sourceCount} 个卡片 · {Math.floor(messageCount / 2)} 轮对话</div>
           {data.modelRef && (
             <div className="truncate">{data.modelRef}</div>
           )}
@@ -298,13 +299,13 @@ export const CardNodeComponent = memo(({ id, data, selected }: NodeProps<CardNod
           </div>
         )}
 
-        {/* 连接指示器 */}
+        {/* 源卡片指示器 */}
         <div className="mt-2 flex justify-center gap-1">
-          {data.sourceCardIds?.slice(0, 5).map((cid) => (
-            <div key={cid} className="w-2 h-2 rounded-full bg-primary/40" title={cid} />
+          {Array.from({ length: Math.min(sourceCount, 5) }).map((_, i) => (
+            <div key={i} className="w-2 h-2 rounded-full bg-primary/40" />
           ))}
-          {(data.sourceCardIds?.length || 0) > 5 && (
-            <span className="text-[10px] text-muted-foreground">+{(data.sourceCardIds?.length || 0) - 5}</span>
+          {sourceCount > 5 && (
+            <span className="text-[10px] text-muted-foreground">+{sourceCount - 5}</span>
           )}
         </div>
 

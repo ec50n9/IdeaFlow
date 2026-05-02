@@ -14,7 +14,7 @@ export function getRequiredCapabilitiesForAtom(atomType: AtomType): string[] {
     case 'text':
       return ['chat'];
     case 'image':
-      return ['vision', 'imageEditing', 'imageGeneration'];
+      return ['vision'];
     case 'file':
       return ['documentParsing'];
     default:
@@ -56,17 +56,13 @@ export function canConnectAtomToDialog(
     return { allowed: true };
   }
 
-  // 检查是否满足任一所需能力（对于图片，只要支持 vision / imageEditing / imageGeneration 之一即可）
+  // 检查是否满足所需能力
   const hasCapability = requiredCapabilities.some((cap) => {
     switch (cap) {
       case 'chat':
         return model.chat;
       case 'vision':
         return model.vision;
-      case 'imageEditing':
-        return model.imageEditing;
-      case 'imageGeneration':
-        return model.imageGeneration;
       case 'documentParsing':
         return model.documentParsing;
       default:

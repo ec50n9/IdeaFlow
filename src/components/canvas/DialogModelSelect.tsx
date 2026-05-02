@@ -82,7 +82,7 @@ export function DialogModelSelect({
               <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
               <div>
                 <p className="font-medium text-foreground">已选中 {selectedAtomNodes.length} 个原子卡片</p>
-                <p>需要模型支持：{requirementDesc || '文本处理'}</p>
+                <p>需要模型支持：{requirementDesc || '文本对话'}</p>
                 <p className="mt-1">已根据卡片类型过滤可用模型，不可用的模型已标灰。</p>
               </div>
             </div>

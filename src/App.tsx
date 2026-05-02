@@ -12,6 +12,7 @@ import { FloatingToolbar } from '@/components/canvas/FloatingToolbar';
 import { SettingsPanel } from '@/components/settings/SettingsPanel';
 import { DialogModelSelect } from '@/components/canvas/DialogModelSelect';
 import { DialogChat } from '@/components/dialog/DialogChat';
+import { ImageGenPanel } from '@/components/imageGen/ImageGenPanel';
 import { useStore } from '@/store/useStore';
 
 export default function App() {
@@ -23,6 +24,8 @@ export default function App() {
   const cancelDialogCreation = useStore((state) => state.cancelDialogCreation);
   const activeDialogId = useStore((state) => state.activeDialogId);
   const openDialog = useStore((state) => state.openDialog);
+  const activeImageGenAtomIds = useStore((state) => state.activeImageGenAtomIds);
+  const closeImageGen = useStore((state) => state.closeImageGen);
   const nodes = useStore((state) => state.nodes);
 
   const handleOpenSettings = (tab: 'models' | 'export-import') => {
@@ -32,6 +35,10 @@ export default function App() {
 
   const selectedAtomNodes = pendingDialogCreation
     ? nodes.filter((n) => pendingDialogCreation.atomNodeIds.includes(n.id))
+    : [];
+
+  const imageGenAtomNodes = activeImageGenAtomIds
+    ? nodes.filter((n) => activeImageGenAtomIds.includes(n.id))
     : [];
 
   return (
@@ -70,6 +77,15 @@ export default function App() {
           dialogCardId={activeDialogId}
         />
       )}
+
+      {/* 全局图像生成弹窗 */}
+      <ImageGenPanel
+        open={!!activeImageGenAtomIds}
+        onOpenChange={(open) => {
+          if (!open) closeImageGen();
+        }}
+        selectedAtomNodes={imageGenAtomNodes}
+      />
     </div>
   );
 }
